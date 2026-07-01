@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-╭──────────────────────────────────────────────────╮
-│           ⚡  AutoDeploy CLI  ⚡                  │
-│     Git Init · AI Commit · Auto Push             │
+┌────────────────────────────────────────────────┐
+│              AutoDeploy CLI                     │
+│     Git Init · AI Commit · Auto Push            │
 │                                                  │
 │  Requires:                                       │
-│    pip install rich prompt_toolkit pyfiglet      │
-╰──────────────────────────────────────────────────╯
+│    pip install rich prompt_toolkit               │
+└────────────────────────────────────────────────┘
 
 Usage:
   python deploy.py                            # project sudah punya remote
@@ -36,19 +36,14 @@ def _ensure(pkg: str, import_as: str | None = None):
 
 _ensure("rich")
 _ensure("prompt_toolkit", "prompt_toolkit")
-_ensure("pyfiglet")
 
-import pyfiglet
-from rich import print as rprint
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-from rich.rule import Rule
 from rich.align import Align
-from rich.padding import Padding
-from rich.box import HEAVY, ROUNDED
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.box import DOUBLE_EDGE, SQUARE, MINIMAL
+from rich.progress import Progress, BarColumn, TextColumn
 from rich.markup import escape
 from prompt_toolkit import prompt as pt_prompt
 from prompt_toolkit.styles import Style as PTStyle
@@ -59,22 +54,32 @@ console = Console(highlight=False, soft_wrap=True)
 
 APP_VERSION = "1.0.0"
 
-# ── Theme (amber / emerald / slate — no purple/blue) ──────────────────────────
-C_PRIMARY   = "orange3"       # headings, accents
-C_PRIMARY_B = "bold orange3"
-C_ACCENT    = "gold3"         # secondary accent (values, links)
-C_OK        = "spring_green3"
-C_WARN      = "yellow3"
-C_ERR       = "bright_red"
-C_MUTED     = "grey58"
-C_DIM       = "grey37"
-C_TEXT      = "white"
+# ── Theme: teal + amber (no purple, no blue) ──────────────────────────────────
+C_HEAD   = "bold turquoise2"
+C_LINE   = "grey42"
+C_LABEL  = "grey62"
+C_VAL    = "wheat1"
+C_OK     = "sea_green2"
+C_WARN   = "dark_orange"
+C_ERR    = "bright_red"
+C_DIM    = "grey35"
+C_TEXT   = "white"
+C_ACCENT = "turquoise2"
 
 PT_STYLE = PTStyle.from_dict({
-    "prompt":      "bold ansiyellow",
+    "prompt":      "bold ansigreen",
     "placeholder": "ansibrightblack",
     "": "ansiwhite",
 })
+
+LOGO = r"""
+   _         _        ____             _
+  / \  _   _| |_ ___ |  _ \  ___ _ __ | | ___  _   _
+ / _ \| | | | __/ _ \| | | |/ _ \ '_ \| |/ _ \| | | |
+/ ___ \ |_| | || (_) | |_| |  __/ |_) | | (_) | |_| |
+/_/   \_\__,_|\__\___/|____/ \___| .__/|_|\___/ \__, |
+                                 |_|             |___/
+"""
 
 # ── Load .env ─────────────────────────────────────────────────────────────────
 def load_env():
@@ -112,59 +117,44 @@ def ui_clear():
 
 
 def ui_banner():
-    fig = pyfiglet.figlet_format("AutoDeploy", font="slant")
     console.print()
-    for line in fig.strip().splitlines():
-        console.print(f"  [{C_PRIMARY_B}]{line}[/]")
+    for line in LOGO.strip("\n").splitlines():
+        console.print(Align.center(Text(line, style=C_HEAD)))
     console.print()
-    console.print(Text("  ⚡  Git Init · AI Commit · Auto Push  ⚡  ", style=C_MUTED))
-    console.print(Text(f"  v{APP_VERSION}  CLI Edition  ", style=C_DIM))
+    console.print(Align.center(Text(f"v{APP_VERSION}  ·  Git Init  ·  AI Commit  ·  Auto Push", style=C_DIM)))
     console.print()
+    console.print(Align.center(Text("─" * 56, style=C_LINE)))
 
 
 def ui_splash():
     ui_clear()
     ui_banner()
-    steps = [
-        ("◴", "Initialising"),
-        ("◵", "Reading workspace"),
-        ("◶", "Loading config"),
-        ("◷", "Ready"),
-    ]
-    for ch, label in steps:
-        console.print(f"  [{C_DIM}]{ch}[/]  [{C_MUTED}]{label}...[/]", end="\r")
-        time.sleep(0.2)
+    labels = ["Initialising", "Reading workspace", "Loading config", "Ready"]
+    for label in labels:
+        console.print(Align.center(Text(f"[ {label} ]", style=C_DIM)), end="\r")
+        time.sleep(0.15)
     console.print(" " * 40, end="\r")
 
 
-def ui_rule(label: str = ""):
-    if label:
-        console.print(Rule(f"[{C_DIM}]{label}[/]", style=C_DIM))
-    else:
-        console.print(Rule(style=C_DIM))
-
-
 def ui_header(repo_dir: str, branch: str, remote: str, ai_provider: str):
-    grid = Table.grid(padding=(0, 2))
-    grid.add_column(style=C_DIM, min_width=12)
-    grid.add_column()
+    body = Table.grid(padding=(0, 2))
+    body.add_column(justify="right", style=C_LABEL, min_width=10)
+    body.add_column(style=C_VAL)
 
-    grid.add_row("Directory", f"[{C_ACCENT}]{escape(repo_dir)}[/]")
-    grid.add_row("Branch",    f"[{C_PRIMARY}]{escape(branch or DEFAULT_BRANCH)}[/]")
-    grid.add_row("Remote",    f"[{C_TEXT}]{escape(remote or 'not set')}[/]")
-    grid.add_row("AI",        f"[{C_OK}]{ai_provider.upper()}[/]  [{C_DIM}]({_ai_model_label()})[/]")
+    body.add_row("DIR", escape(repo_dir))
+    body.add_row("BRANCH", f"[{C_ACCENT}]{escape(branch or DEFAULT_BRANCH)}[/]")
+    body.add_row("REMOTE", escape(remote or "not set"))
+    body.add_row("AI", f"[{C_OK}]{ai_provider.upper()}[/]  [{C_DIM}]{_ai_model_label()}[/]")
 
-    title = Text.from_markup(f"  [{C_PRIMARY_B}]⚡[/]  [bold white]AutoDeploy CLI[/]  [{C_PRIMARY_B}]⚡[/]  ")
-    panel = Panel(
-        Padding(grid, (0, 1)),
-        title=title,
-        subtitle=Text.from_markup(f"[{C_DIM}]Git Init · AI Commit · Auto Push[/]"),
-        border_style=C_DIM,
-        box=ROUNDED,
-        padding=(1, 2),
-    )
     console.print()
-    console.print(panel)
+    console.print(Panel(
+        body,
+        title="[bold white] SESSION [/]",
+        title_align="left",
+        border_style=C_LINE,
+        box=SQUARE,
+        padding=(1, 2),
+    ))
 
 
 def _ai_model_label() -> str:
@@ -178,14 +168,20 @@ def _ai_model_label() -> str:
 
 
 def ui_success(commit_msg: str, branch: str, remote: str):
+    body = Table.grid(padding=(0, 2))
+    body.add_column(justify="right", style=C_LABEL, min_width=10)
+    body.add_column(style=C_TEXT)
+    body.add_row("COMMIT", escape(commit_msg))
+    body.add_row("BRANCH", f"[{C_ACCENT}]{escape(branch)}[/]")
+    body.add_row("REMOTE", escape(remote))
+
     console.print()
     console.print(Panel(
-        f"[bold {C_OK}]✓  Deploy Complete[/]\n\n"
-        f"[{C_DIM}]Commit [/] [{C_TEXT}]{escape(commit_msg)}[/]\n"
-        f"[{C_DIM}]Branch [/] [{C_PRIMARY}]{escape(branch)}[/]\n"
-        f"[{C_DIM}]Remote [/] [{C_ACCENT}]{escape(remote)}[/]",
+        body,
+        title=f"[bold {C_OK}] DEPLOY COMPLETE [/]",
+        title_align="left",
         border_style=C_OK,
-        box=HEAVY,
+        box=DOUBLE_EDGE,
         padding=(1, 2),
     ))
     console.print()
@@ -194,32 +190,35 @@ def ui_success(commit_msg: str, branch: str, remote: str):
 def ui_error(message: str):
     console.print()
     console.print(Panel(
-        f"[bold {C_ERR}]✗  Error[/]\n\n[{C_TEXT}]{escape(str(message))}[/]",
+        f"[{C_TEXT}]{escape(str(message))}[/]",
+        title=f"[bold {C_ERR}] ERROR [/]",
+        title_align="left",
         border_style=C_ERR,
-        box=HEAVY,
+        box=DOUBLE_EDGE,
         padding=(1, 2),
     ))
     console.print()
 
 
 def ui_warn(message: str):
-    console.print(f"\n  [bold {C_WARN}]⚠[/]  [{C_WARN}]{escape(message)}[/]\n")
+    console.print(f"\n  [bold {C_WARN}]![/] [{C_WARN}]{escape(message)}[/]\n")
 
 
-def ui_step(icon: str, label: str, value: str = ""):
+def ui_step(label: str, value: str = ""):
     val_str = f"  [{C_DIM}]{escape(value)}[/]" if value else ""
-    console.print(f"  [{C_PRIMARY}]{icon}[/]  [{C_TEXT}]{escape(label)}[/]{val_str}")
+    console.print(f"  [{C_ACCENT}]>[/] [{C_TEXT}]{escape(label)}[/]{val_str}")
 
 
 def ui_tips():
-    tips = [
-        f"[{C_DIM}]•[/] [{C_MUTED}]Tekan[/] [{C_PRIMARY}]Enter[/] [{C_MUTED}]untuk konfirmasi commit message AI[/]",
-        f"[{C_DIM}]•[/] [{C_MUTED}]Ketik pesan baru untuk override commit message[/]",
-        f"[{C_DIM}]•[/] [{C_MUTED}]Ctrl+C untuk batal kapan saja[/]",
-    ]
     console.print()
-    for tip in tips:
-        console.print(f"    {tip}")
+    console.print(Panel(
+        f"[{C_LABEL}]Enter[/] [{C_DIM}]terima commit message AI   ·   [/]"
+        f"[{C_LABEL}]ketik pesan[/] [{C_DIM}]untuk override   ·   [/]"
+        f"[{C_LABEL}]Ctrl+C[/] [{C_DIM}]batal kapan saja[/]",
+        border_style=C_DIM,
+        box=MINIMAL,
+        padding=(0, 1),
+    ))
     console.print()
 
 
@@ -340,12 +339,12 @@ def generate_commit_message(diff: str) -> str:
 
     with Progress(
         TextColumn("  "),
-        SpinnerColumn("dots", style=C_PRIMARY),
-        TextColumn(f"[{C_MUTED}]Generating commit message via [bold]{AI_PROVIDER.upper()}[/]...[/]"),
+        BarColumn(bar_width=20, style=C_DIM, complete_style=C_ACCENT, finished_style=C_OK),
+        TextColumn(f"[{C_LABEL}]{AI_PROVIDER.upper()} thinking...[/]"),
         console=console,
         transient=True,
     ) as pg:
-        pg.add_task("")
+        pg.add_task("", total=None)
         try:
             if AI_PROVIDER == "openai":
                 if not OPENAI_KEY:
@@ -361,21 +360,22 @@ def generate_commit_message(diff: str) -> str:
                 raise ValueError(f"AI provider tidak dikenal: {AI_PROVIDER}")
         except Exception as exc:
             ai_msg = ""
-            console.print(f"\n  [{C_WARN}]⚠[/]  [{C_MUTED}]AI gagal: {escape(str(exc))}[/]")
+            console.print(f"\n  [{C_WARN}]![/] [{C_DIM}]AI gagal: {escape(str(exc))}[/]")
 
     if ai_msg:
         console.print()
         console.print(Panel(
-            f"[{C_DIM}]Suggested[/]\n\n[bold {C_TEXT}]{escape(ai_msg)}[/]",
-            title=f"[bold {C_PRIMARY}]⚡  AI Commit Message[/]",
-            border_style=C_DIM,
-            box=ROUNDED,
+            f"[bold {C_TEXT}]{escape(ai_msg)}[/]",
+            title="[bold white] SUGGESTED COMMIT [/]",
+            title_align="left",
+            border_style=C_LINE,
+            box=SQUARE,
             padding=(1, 2),
         ))
         console.print()
         try:
             override = pt_prompt(
-                HTML('<ansibrightblack>  ❯ </ansibrightblack><ansiyellow>Commit  </ansiyellow>'),
+                HTML('<ansibrightblack>  &gt; </ansibrightblack><ansigreen>commit  </ansigreen>'),
                 style=PT_STYLE,
                 placeholder="  press Enter to accept, or type your own message",
             ).strip()
@@ -387,7 +387,7 @@ def generate_commit_message(diff: str) -> str:
     ui_warn("AI tidak bisa generate commit message. Masukkan manual:")
     try:
         msg = pt_prompt(
-            HTML('<ansibrightblack>  ❯ </ansibrightblack><ansiyellow>Commit  </ansiyellow>'),
+            HTML('<ansibrightblack>  &gt; </ansibrightblack><ansigreen>commit  </ansigreen>'),
             style=PT_STYLE,
             placeholder="  e.g. feat(auth): add login endpoint",
         ).strip()
@@ -413,17 +413,18 @@ def deploy(github_url: str = ""):
         if not github_url:
             console.print()
             console.print(Panel(
-                f"[{C_MUTED}]Project ini belum punya [/][{C_PRIMARY}].git[/][{C_MUTED}]. "
+                f"[{C_DIM}]Project ini belum punya [/][{C_ACCENT}].git[/][{C_DIM}]. "
                 f"Masukkan GitHub URL untuk dijadikan remote origin.[/]",
-                title="[bold white]🔗  New Repository[/]",
-                border_style=C_DIM,
-                box=ROUNDED,
+                title="[bold white] NEW REPOSITORY [/]",
+                title_align="left",
+                border_style=C_LINE,
+                box=SQUARE,
                 padding=(1, 2),
             ))
             console.print()
             try:
                 github_url = pt_prompt(
-                    HTML('<ansibrightblack>  ❯ </ansibrightblack><ansiyellow>GitHub URL  </ansiyellow>'),
+                    HTML('<ansibrightblack>  &gt; </ansibrightblack><ansigreen>github url  </ansigreen>'),
                     style=PT_STYLE,
                     placeholder="  https://github.com/username/repo",
                 ).strip()
@@ -434,11 +435,11 @@ def deploy(github_url: str = ""):
             ui_error("GitHub URL diperlukan untuk repo baru.")
             sys.exit(1)
 
-        ui_step("◆", "git init")
+        ui_step("git init")
         run(["git", "init"])
         run(["git", "checkout", "-b", DEFAULT_BRANCH])
 
-        ui_step("◆", "git remote add origin", github_url)
+        ui_step("git remote add origin", github_url)
         run(["git", "remote", "add", "origin", github_url])
         remote = github_url
 
@@ -451,17 +452,18 @@ def deploy(github_url: str = ""):
             if not github_url:
                 console.print()
                 console.print(Panel(
-                    f"[{C_MUTED}]Repo ditemukan tapi belum punya remote origin. "
+                    f"[{C_DIM}]Repo ditemukan tapi belum punya remote origin. "
                     f"Masukkan GitHub URL.[/]",
-                    title="[bold white]🔗  Set Remote[/]",
-                    border_style=C_DIM,
-                    box=ROUNDED,
+                    title="[bold white] SET REMOTE [/]",
+                    title_align="left",
+                    border_style=C_LINE,
+                    box=SQUARE,
                     padding=(1, 2),
                 ))
                 console.print()
                 try:
                     github_url = pt_prompt(
-                        HTML('<ansibrightblack>  ❯ </ansibrightblack><ansiyellow>GitHub URL  </ansiyellow>'),
+                        HTML('<ansibrightblack>  &gt; </ansibrightblack><ansigreen>github url  </ansigreen>'),
                         style=PT_STYLE,
                         placeholder="  https://github.com/username/repo",
                     ).strip()
@@ -472,7 +474,7 @@ def deploy(github_url: str = ""):
                 ui_error("GitHub URL diperlukan.")
                 sys.exit(1)
 
-            ui_step("◆", "git remote add origin", github_url)
+            ui_step("git remote add origin", github_url)
             run(["git", "remote", "add", "origin", github_url])
             remote = github_url
 
@@ -487,17 +489,18 @@ def deploy(github_url: str = ""):
     # ── Cek perubahan ─────────────────────────────────────────────────────────
     if not git_has_changes():
         console.print(Panel(
-            f"[bold {C_WARN}]⚠  Tidak ada perubahan[/]\n\n"
-            f"[{C_MUTED}]Semua file sudah up to date. Tidak ada yang perlu di-commit.[/]",
+            f"[{C_DIM}]Semua file sudah up to date. Tidak ada yang perlu di-commit.[/]",
+            title=f"[bold {C_WARN}] NO CHANGES [/]",
+            title_align="left",
             border_style=C_WARN,
-            box=ROUNDED,
+            box=SQUARE,
             padding=(1, 2),
         ))
         console.print()
         sys.exit(0)
 
     # ── git add . ─────────────────────────────────────────────────────────────
-    ui_step("●", "Staging semua perubahan", "git add .")
+    ui_step("Staging semua perubahan", "git add .")
     run(["git", "add", "."])
 
     # ── Ambil diff ────────────────────────────────────────────────────────────
@@ -510,7 +513,7 @@ def deploy(github_url: str = ""):
         sys.exit(1)
 
     # ── git commit ────────────────────────────────────────────────────────────
-    ui_step("●", "Committing", commit_msg)
+    ui_step("Committing", commit_msg)
     result = run(["git", "commit", "-m", commit_msg])
     if result.returncode != 0:
         ui_error(f"git commit gagal.\n{result.stderr}")
@@ -520,21 +523,21 @@ def deploy(github_url: str = ""):
     console.print()
     with Progress(
         TextColumn("  "),
-        SpinnerColumn("dots", style=C_PRIMARY),
-        TextColumn(f"[{C_MUTED}]Pushing ke[/] [{C_PRIMARY}]{escape(branch)}[/][{C_MUTED}]...[/]"),
+        BarColumn(bar_width=20, style=C_DIM, complete_style=C_ACCENT, finished_style=C_OK),
+        TextColumn(f"[{C_LABEL}]pushing to {escape(branch)}...[/]"),
         console=console,
         transient=True,
     ) as pg:
-        pg.add_task("")
+        pg.add_task("", total=None)
         result = run(["git", "push", "-u", "origin", branch])
 
     if result.returncode != 0:
         ui_error(
             f"git push gagal.\n\n"
-            f"[{C_MUTED}]Kemungkinan penyebab:[/]\n"
-            f"• Remote URL salah\n"
-            f"• Belum ada akses ke repo\n"
-            f"• Branch belum ada di remote (coba push manual sekali)\n\n"
+            f"[{C_DIM}]Kemungkinan penyebab:[/]\n"
+            f"- Remote URL salah\n"
+            f"- Belum ada akses ke repo\n"
+            f"- Branch belum ada di remote (coba push manual sekali)\n\n"
             f"[{C_DIM}]{escape((result.stderr or '').strip())}[/]"
         )
         sys.exit(1)
@@ -552,10 +555,8 @@ if __name__ == "__main__":
         deploy(github_url)
     except KeyboardInterrupt:
         console.print()
-        console.print(Rule(style=C_DIM))
-        console.print(
-            Align.center(Text("  ⚡  Deploy dibatalkan  ⚡  ", style=C_MUTED))
-        )
-        console.print(Rule(style=C_DIM))
+        console.print(Align.center(Text("─" * 56, style=C_DIM)))
+        console.print(Align.center(Text("Deploy dibatalkan", style=C_DIM)))
+        console.print(Align.center(Text("─" * 56, style=C_DIM)))
         console.print()
         sys.exit(0)
