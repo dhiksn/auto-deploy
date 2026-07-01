@@ -516,7 +516,7 @@ def deploy(github_url: str = ""):
             f"• Remote URL salah\n"
             f"• Belum ada akses ke repo\n"
             f"• Branch belum ada di remote (coba push manual sekali)\n\n"
-            f"[bright_black]{escape(result.stderr.strip())}[/]"
+            f"[bright_black]{escape((result.stderr or '').strip())}[/]"
         )
         sys.exit(1)
 
