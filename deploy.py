@@ -142,7 +142,6 @@ def ui_header(repo_dir: str, branch: str, remote: str, ai_provider: str):
     body.add_row("REMOTE", escape(remote or "not set"))
     body.add_row("AI", f"[{C_OK}]{ai_provider.upper()}[/]  [{C_DIM}]{_ai_model_label()}[/]")
 
-    console.print()
     console.print(Panel(
         body,
         title="[bold white] SESSION [/]",
@@ -206,7 +205,6 @@ def ui_step(label: str, value: str = ""):
 
 
 def ui_tips():
-    console.print()
     console.print(Panel(
         f"[{C_LABEL}]Enter[/] [{C_DIM}]terima commit message AI   ·   [/]"
         f"[{C_LABEL}]ketik pesan[/] [{C_DIM}]untuk override   ·   [/]"
@@ -367,7 +365,7 @@ def generate_commit_message(diff: str) -> str:
             title_align="left",
             border_style=C_LINE,
             box=SQUARE,
-            padding=(1, 2),
+            padding=(0, 2),
         ))
         console.print()
         try:
@@ -501,13 +499,9 @@ def deploy(github_url: str = ""):
         sys.exit(0)
 
     # ── git add . ─────────────────────────────────────────────────────────────
-    ui_step("Staging semua perubahan", "git add .")
+    console.print(f"  [{C_DIM}]⠸[/]  Staging changes...", end="\r")
     result = run(["git", "add", "."], capture=True)
-    # Print warning dari git add dengan indent yang sejajar
-    output = ((result.stdout or "") + (result.stderr or "")).strip()
-    if output:
-        for line in output.splitlines():
-            console.print(f"  [{C_DIM}]{escape(line)}[/]")
+    console.print(f"  [{C_OK}]✓[/]  Staging changes...   ")
 
     # ── Ambil diff ────────────────────────────────────────────────────────────
     diff = git_diff_staged()
@@ -519,34 +513,29 @@ def deploy(github_url: str = ""):
         sys.exit(1)
 
     # ── git commit ────────────────────────────────────────────────────────────
-    ui_step("Committing", commit_msg)
-    result = run(["git", "commit", "-m", commit_msg])
+    console.print(f"  [{C_DIM}]⠸[/]  Creating commit...", end="\r")
+    result = run(["git", "commit", "-m", commit_msg], capture=True)
     if result.returncode != 0:
-        ui_error(f"git commit gagal.\n{result.stderr}")
+        console.print(f"  [{C_ERR}]✗[/]  Creating commit...   ")
+        ui_error(f"git commit gagal.\n{(result.stderr or '').strip()}")
         sys.exit(1)
+    console.print(f"  [{C_OK}]✓[/]  Creating commit...   ")
 
     # ── git push ──────────────────────────────────────────────────────────────
-    console.print()
-    with Progress(
-        TextColumn("  "),
-        BarColumn(bar_width=20, style=C_DIM, complete_style=C_ACCENT, finished_style=C_OK),
-        TextColumn(f"[{C_LABEL}]pushing to {escape(branch)}...[/]"),
-        console=console,
-        transient=True,
-    ) as pg:
-        pg.add_task("", total=None)
-        result = run(["git", "push", "-u", "origin", branch])
-
+    console.print(f"  [{C_DIM}]⠸[/]  Pushing to GitHub...", end="\r")
+    result = run(["git", "push", "-u", "origin", branch], capture=True)
     if result.returncode != 0:
+        console.print(f"  [{C_ERR}]✗[/]  Pushing to GitHub...   ")
         ui_error(
             f"git push gagal.\n\n"
             f"[{C_DIM}]Kemungkinan penyebab:[/]\n"
             f"- Remote URL salah\n"
             f"- Belum ada akses ke repo\n"
-            f"- Branch belum ada di remote (coba push manual sekali)\n\n"
+            f"- Branch belum ada di remote\n\n"
             f"[{C_DIM}]{escape((result.stderr or '').strip())}[/]"
         )
         sys.exit(1)
+    console.print(f"  [{C_OK}]✓[/]  Pushing to GitHub...   ")
 
     ui_success(commit_msg, branch, remote)
 
