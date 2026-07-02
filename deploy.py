@@ -50,7 +50,7 @@ from prompt_toolkit.formatted_text import HTML
 # ── Console ───────────────────────────────────────────────────────────────────
 console = Console(highlight=False, soft_wrap=True)
 
-APP_VERSION = "1.6.1"
+APP_VERSION = "1.6.3"
 
 # ── Theme: teal + amber (no purple, no blue) ──────────────────────────────────
 C_HEAD   = "bold turquoise2"
@@ -344,13 +344,13 @@ def run_uninstall():
 
         stdout = (r.stdout or "").lower()
         stderr = (r.stderr or "").lower()
-        not_found = "not installed" in stdout or "skipping" in stdout or \
-                    "not installed" in stderr or "skipping" in stderr
+        combined = stdout + stderr
+        not_found = "not installed" in combined or "skipping" in combined
+        success = "successfully uninstalled" in combined or (r.returncode == 0 and not not_found)
 
         if not_found:
-            # Package tidak ada, skip tanpa print apapun
             continue
-        elif r.returncode == 0:
+        elif success:
             console.print(f"  [{C_OK}]✓[/]  Menghapus {pkg}")
             uninstalled_any = True
         else:
