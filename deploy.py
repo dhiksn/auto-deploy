@@ -361,17 +361,29 @@ def run_uninstall():
         console.print(f"  [{C_DIM}]Coba manual: pip uninstall autodeploy-ai[/]")
 
     # Hapus folder corrupt ~utodeploy* yang sering muncul setelah pip install
-    import site
-    for site_dir in site.getsitepackages():
+    # dan hapus juga autodeploy.exe yang mungkin tertinggal di Scripts
+    import site, shutil
+    scripts_dirs = [Path(sys.executable).parent]  # Scripts dir
+    site_dirs = site.getsitepackages()
+
+    for scripts_dir in scripts_dirs:
+        for f in scripts_dir.glob("autodeploy*"):
+            try:
+                f.unlink()
+                console.print(f"  [{C_OK}]✓[/]  Hapus script  [{C_DIM}]{f.name}[/]")
+            except Exception:
+                pass
+
+    for site_dir in site_dirs:
         site_path = Path(site_dir)
-        if site_path.exists():
-            for folder in site_path.glob("~utodeploy*"):
-                try:
-                    import shutil
-                    shutil.rmtree(folder) if folder.is_dir() else folder.unlink()
-                    console.print(f"  [{C_OK}]✓[/]  Hapus sisa corrupt  [{C_DIM}]{folder.name}[/]")
-                except Exception:
-                    pass
+        if not site_path.exists():
+            continue
+        for entry in site_path.glob("~utodeploy*"):
+            try:
+                shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
+                console.print(f"  [{C_OK}]✓[/]  Hapus sisa corrupt  [{C_DIM}]{entry.name}[/]")
+            except Exception:
+                pass
 
     console.print()
     console.print(Panel(
