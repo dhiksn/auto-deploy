@@ -1,3 +1,0 @@
-rich
-prompt_toolkit
-pyfiglet

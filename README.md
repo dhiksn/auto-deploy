@@ -1,6 +1,10 @@
-# ✦ AutoDeploy CLI
+# ✦ AutoDeploy AI
 
 > Git Init · AI Commit · Auto Push — dari terminal mana pun, satu command.
+
+![Tampilan Awal](Tawal.png)
+
+![Tampilan Akhir](Takhir.png)
 
 ---
 
@@ -8,6 +12,7 @@
 
 - **Auto `git init`** kalau project belum punya `.git`
 - **Set remote otomatis** dari GitHub URL yang lo kasih
+- **Validasi repo** — cek apakah repo GitHub benar-benar ada sebelum deploy
 - **AI generate commit message** pakai Groq, OpenAI, atau Ollama
 - **Spinner animasi** di tiap step — staging, generating, commit, push
 - **Global CLI** — bisa dipanggil dari folder project mana pun tanpa copy file
@@ -16,22 +21,17 @@
 
 ## Install
 
-Clone repo ini, lalu install sebagai global command:
-
 ```bash
-git clone https://github.com/dhiksn/auto-deploy.git
-cd auto-deploy
-pip install -e .
+pip install autodeploy-ai
 ```
 
-Setelah install, command `deploy` langsung tersedia dari terminal mana pun.  
-Dependencies (`rich`, `prompt_toolkit`, `pyfiglet`) diinstall otomatis.
+Setelah install, command `deploy` langsung tersedia dari terminal mana pun.
 
 ---
 
 ## Setup
 
-Buat file `.env` dari contoh yang tersedia:
+Buat file `.env` di folder manapun lo mau deploy, atau di home directory:
 
 ```bash
 # Windows
@@ -60,7 +60,7 @@ GROQ_MODEL=llama-3.1-8b-instant
 # OPENAI_MODEL=gpt-4o-mini
 ```
 
-> **Penting:** file `.env` sudah di-ignore git. Jangan pernah commit file ini karena berisi API key.
+> **Penting:** jangan pernah commit file `.env` karena berisi API key.
 
 ---
 
@@ -77,16 +77,17 @@ deploy
 ### Flow yang terjadi
 
 ```
-  ⠙  Staging changes         → git add .
-  ⠙  Generating commit message  → AI generate via Groq / OpenAI / Ollama
+  ✓  Staging changes            → git add .
+  ✓  Generating commit message  → AI generate via Groq / OpenAI / Ollama
                                    └─ konfirmasi atau ketik manual
-  ⠙  Creating commit         → git commit -m "<pesan>"
-  ⠙  Pushing to GitHub       → git push -u origin <branch>
+  ✓  Creating commit            → git commit -m "<pesan>"
+  ✓  Pushing to GitHub          → git push -u origin <branch>
 ```
 
 Kalau project belum ada `.git`, sebelum flow di atas akan otomatis:
-- `git init`
-- `git remote add origin <url>`
+1. Validasi repo GitHub — pastiin sudah dibuat di [github.com/new](https://github.com/new)
+2. `git init`
+3. `git remote add origin <url>`
 
 ---
 

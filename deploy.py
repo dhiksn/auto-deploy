@@ -50,7 +50,7 @@ from prompt_toolkit.formatted_text import HTML
 # ── Console ───────────────────────────────────────────────────────────────────
 console = Console(highlight=False, soft_wrap=True)
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.5.0"
 
 # ── Theme: teal + amber (no purple, no blue) ──────────────────────────────────
 C_HEAD   = "bold turquoise2"
@@ -479,7 +479,7 @@ def validate_github_url(url: str) -> tuple[bool, str]:
     try:
         req = urllib.request.Request(
             api_url,
-            headers={"User-Agent": "AutoDeploy-CLI/1.0"}
+            headers={"User-Agent": "AutoDeploy-CLI/1.5"}
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             if resp.status == 200:
