@@ -71,7 +71,7 @@ PT_STYLE = PTStyle.from_dict({
     "": "ansiwhite",
 })
 
-LOGO = "small"  # pyfiglet font
+LOGO = "Slant"  # pyfiglet font
 
 # ── Load .env ─────────────────────────────────────────────────────────────────
 def load_env():
@@ -109,10 +109,10 @@ def ui_clear():
 def ui_banner():
     _ensure("pyfiglet")
     import pyfiglet
-    fig = pyfiglet.figlet_format("AutoDeploy", font=LOGO)
+    fig = pyfiglet.figlet_format("AutoDeploy", font=LOGO, justify="center",
+                                  width=console.width or 100)
     console.print()
-    for line in fig.strip("\n").splitlines():
-        console.print(Align.center(Text(line, style=C_HEAD)))
+    console.print(f"[{C_HEAD}]{fig.rstrip()}[/]")
     console.print()
     console.print(Align.center(Text(f"v{APP_VERSION}  ·  Git Init  ·  AI Commit  ·  Auto Push", style=C_DIM)))
     console.print()
@@ -139,9 +139,8 @@ def ui_header(repo_dir: str, branch: str, remote: str, ai_provider: str):
     body.add_column(justify="right", style=C_LABEL, min_width=10)
     body.add_column(style=C_VAL)
 
-    body.add_row("DIR", escape(repo_dir))
-    body.add_row("BRANCH", f"[{C_ACCENT}]{escape(branch or DEFAULT_BRANCH)}[/]")
     body.add_row("REMOTE", escape(remote or "not set"))
+    body.add_row("BRANCH", f"[{C_ACCENT}]{escape(branch or DEFAULT_BRANCH)}[/]")
     body.add_row("AI", f"[{C_OK}]{ai_provider.upper()}[/]  [{C_DIM}]{_ai_model_label()}[/]")
 
     console.print(Panel(
@@ -450,6 +449,56 @@ def generate_commit_message(diff: str) -> str:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  VALIDATION
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def validate_github_url(url: str) -> tuple[bool, str]:
+    """Cek apakah repo GitHub benar-benar ada. Return (valid, pesan_error)."""
+    import urllib.request
+    import urllib.error
+
+    # Normalisasi URL — ambil bagian username/repo saja
+    url = url.strip().rstrip("/")
+    if url.endswith(".git"):
+        url = url[:-4]
+
+    # Ekstrak path dari URL
+    # Support: https://github.com/user/repo atau git@github.com:user/repo
+    if url.startswith("git@github.com:"):
+        path = url.replace("git@github.com:", "")
+    elif "github.com/" in url:
+        path = url.split("github.com/")[-1]
+    else:
+        return False, "URL bukan GitHub. Gunakan format https://github.com/username/repo"
+
+    parts = path.strip("/").split("/")
+    if len(parts) < 2 or not parts[0] or not parts[1]:
+        return False, "Format URL tidak valid. Contoh: https://github.com/username/repo"
+
+    api_url = f"https://api.github.com/repos/{parts[0]}/{parts[1]}"
+    try:
+        req = urllib.request.Request(
+            api_url,
+            headers={"User-Agent": "AutoDeploy-CLI/1.0"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status == 200:
+                return True, ""
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return False, f"Repo tidak ditemukan: [bold]{parts[0]}/{parts[1]}[/bold]\nBuat repo baru di [cyan]https://github.com/new[/cyan] terlebih dahulu."
+        elif e.code == 403:
+            # Rate limited tapi repo kemungkinan ada
+            return True, ""
+        return False, f"GitHub mengembalikan error {e.code}."
+    except Exception:
+        # Tidak bisa cek (offline, timeout) — lanjut saja
+        return True, ""
+
+    return False, "Tidak bisa memvalidasi URL."
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  MAIN DEPLOY FLOW
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -463,26 +512,64 @@ def deploy(github_url: str = ""):
 
     # ── Inisialisasi repo baru ────────────────────────────────────────────────
     if not is_git_repo:
-        if not github_url:
-            console.print()
-            console.print(Panel(
-                f"[{C_DIM}]Project ini belum punya [/][{C_ACCENT}].git[/][{C_DIM}]. "
-                f"Masukkan GitHub URL untuk dijadikan remote origin.[/]",
-                title="[bold white] NEW REPOSITORY [/]",
-                title_align="left",
-                border_style=C_LINE,
-                box=SQUARE,
-                padding=(1, 2),
-            ))
-            console.print()
-            try:
-                github_url = pt_prompt(
-                    HTML('<ansibrightblack>  &gt; </ansibrightblack><ansigreen>github url  </ansigreen>'),
-                    style=PT_STYLE,
-                    placeholder="  https://github.com/username/repo",
-                ).strip()
-            except (KeyboardInterrupt, EOFError):
-                raise KeyboardInterrupt
+        while True:
+            if not github_url:
+                ui_clear()
+                ui_banner()
+                console.print()
+                console.print(Panel(
+                    f"[{C_DIM}]Project ini belum punya [/][{C_ACCENT}].git[/][{C_DIM}].[/]\n\n"
+                    f"[{C_WARN}]![/] [{C_VAL}]Pastikan kamu sudah membuat repo baru di GitHub terlebih dahulu.[/]\n"
+                    f"  [{C_DIM}]Buka [/][{C_ACCENT}]https://github.com/new[/][{C_DIM}] → buat repo → copy URL-nya.[/]\n\n"
+                    f"[{C_DIM}]Lalu masukkan URL repo tersebut di bawah.[/]",
+                    title="[bold white] NEW REPOSITORY [/]",
+                    title_align="left",
+                    border_style=C_LINE,
+                    box=SQUARE,
+                    padding=(1, 2),
+                ))
+                console.print()
+                try:
+                    github_url = pt_prompt(
+                        HTML('<ansibrightblack>  &gt; </ansibrightblack><ansigreen>github url  </ansigreen>'),
+                        style=PT_STYLE,
+                        placeholder="  https://github.com/username/repo",
+                    ).strip()
+                except (KeyboardInterrupt, EOFError):
+                    raise KeyboardInterrupt
+
+                if not github_url:
+                    ui_warn("URL tidak boleh kosong.")
+                    time.sleep(1)
+                    continue
+
+            # Validasi repo
+            sys.stdout.write(f"\r  \033[2m⠸\033[0m  Checking repository...")
+            sys.stdout.flush()
+            valid, err_msg = validate_github_url(github_url)
+            sys.stdout.write("\r" + " " * 60 + "\r")
+            sys.stdout.flush()
+
+            if valid:
+                console.print(f"  [{C_OK}]✓[/]  Repository found")
+                break
+            else:
+                # Tampil error, tunggu Enter, lalu ulang dari awal
+                console.print()
+                console.print(Panel(
+                    f"[{C_ERR}]✗  Repo tidak ditemukan[/]\n\n"
+                    f"[{C_TEXT}]{err_msg}[/]",
+                    border_style=C_ERR,
+                    box=SQUARE,
+                    padding=(1, 2),
+                ))
+                console.print()
+                try:
+                    console.print(f"  [{C_DIM}]Tekan Enter untuk coba lagi...[/]", end="")
+                    input()
+                except (KeyboardInterrupt, EOFError):
+                    raise KeyboardInterrupt
+                github_url = ""  # reset, ulang dari awal
 
         if not github_url:
             ui_error("GitHub URL diperlukan untuk repo baru.")
@@ -550,6 +637,11 @@ def deploy(github_url: str = ""):
             padding=(1, 2),
         ))
         console.print()
+        try:
+            console.print(f"  [{C_DIM}]Press Enter to exit...[/]", end="")
+            input()
+        except (KeyboardInterrupt, EOFError):
+            pass
         sys.exit(0)
 
     # ── git add . ─────────────────────────────────────────────────────────────

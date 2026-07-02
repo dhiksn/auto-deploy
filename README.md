@@ -8,8 +8,8 @@
 
 - **Auto `git init`** kalau project belum punya `.git`
 - **Set remote otomatis** dari GitHub URL yang lo kasih
-- **AI generate commit message** pakai Ollama, OpenAI, atau Groq
-- **Auto `git add` + `git push`** setelah commit
+- **AI generate commit message** pakai Groq, OpenAI, atau Ollama
+- **Spinner animasi** di tiap step — staging, generating, commit, push
 - **Global CLI** — bisa dipanggil dari folder project mana pun tanpa copy file
 
 ---
@@ -24,29 +24,34 @@ cd auto-deploy
 pip install -e .
 ```
 
-Setelah install, command `deploy` langsung tersedia dari terminal mana pun.
+Setelah install, command `deploy` langsung tersedia dari terminal mana pun.  
+Dependencies (`rich`, `prompt_toolkit`, `pyfiglet`) diinstall otomatis.
 
 ---
 
 ## Setup
 
-Copy `.env.example` jadi `.env` lalu isi sesuai provider AI yang lo pakai:
+Buat file `.env` dari contoh yang tersedia:
 
 ```bash
+# Windows
+copy .env.example .env
+
+# Linux / Mac
 cp .env.example .env
 ```
 
-Edit `.env`:
+Edit `.env` sesuai provider AI yang lo pakai:
 
 ```env
-# Pilih provider: openai | groq | ollama
+# Pilih provider: groq | openai | ollama
 AI_PROVIDER=groq
 
-# Groq (gratis, cepat)
+# Groq (gratis, cepat) — https://console.groq.com/keys
 GROQ_API_KEY=gsk_...
 GROQ_MODEL=llama-3.1-8b-instant
 
-# Ollama (lokal)
+# Ollama (lokal, tidak perlu API key)
 # OLLAMA_URL=http://localhost:11434
 # OLLAMA_MODEL=llama3.2:latest
 
@@ -72,19 +77,16 @@ deploy
 ### Flow yang terjadi
 
 ```
-1. Cek .git
-   ├── Belum ada → git init + git remote add origin <url>
-   └── Sudah ada → cek remote, minta URL kalau belum ada
-
-2. git add .
-
-3. AI generate commit message
-   └── Tekan Enter untuk pakai, atau ketik manual untuk override
-
-4. git commit -m "<pesan>"
-
-5. git push -u origin <branch>
+  ⠙  Staging changes         → git add .
+  ⠙  Generating commit message  → AI generate via Groq / OpenAI / Ollama
+                                   └─ konfirmasi atau ketik manual
+  ⠙  Creating commit         → git commit -m "<pesan>"
+  ⠙  Pushing to GitHub       → git push -u origin <branch>
 ```
+
+Kalau project belum ada `.git`, sebelum flow di atas akan otomatis:
+- `git init`
+- `git remote add origin <url>`
 
 ---
 
@@ -96,7 +98,7 @@ deploy
 | `ollama` | `llama3.2:latest` | Lokal, gratis, butuh Ollama running | Tidak perlu |
 | `openai` | `gpt-4o-mini` | Online, berbayar | [platform.openai.com](https://platform.openai.com/api-keys) |
 
-Untuk ganti provider, tinggal ubah `AI_PROVIDER` di file `.env`.
+Untuk ganti provider, ubah `AI_PROVIDER` di file `.env`.
 
 ---
 
