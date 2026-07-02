@@ -35,7 +35,7 @@ Repository = "https://github.com/dhiksn/auto-deploy"
 "Bug Tracker" = "https://github.com/dhiksn/auto-deploy/issues"
 
 [project.scripts]
-deploy = "deploy:main_cli"
+autodeploy = "deploy:main_cli"
 
 [tool.setuptools]
 py-modules = ["deploy"]

@@ -2,9 +2,16 @@
 
 > Git Init · AI Commit · Auto Push — dari terminal mana pun, satu command.
 
-![Tampilan Awal](Tawal.png)
+AutoDeploy AI adalah CLI yang mengotomatisasi proses deploy project ke GitHub:
+- Git init otomatis
+- AI generate commit message
+- Push ke GitHub dalam satu command
 
-![Tampilan Akhir](Takhir.png)
+**Setup — masukin URL repo GitHub buat pertama kali:**
+![Setup deploy](Tawal.png)
+
+**Setelah jalan — cek status repo & AI commit:**
+![Deploy running](Takhir.png)
 
 ---
 
@@ -68,10 +75,10 @@ GROQ_MODEL=llama-3.1-8b-instant
 
 ```bash
 # Project baru — belum ada .git
-deploy https://github.com/username/repo-name
+autodeploy https://github.com/username/repo-name
 
 # Project yang sudah punya remote
-deploy
+autodeploy
 ```
 
 ### Flow yang terjadi
