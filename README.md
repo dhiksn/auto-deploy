@@ -8,10 +8,10 @@ AutoDeploy AI adalah CLI yang mengotomatisasi proses deploy project ke GitHub:
 - Push ke GitHub dalam satu command
 
 **Setup — masukin URL repo GitHub buat pertama kali:**
-![Setup deploy](Tawal.png)
+![Setup deploy](https://raw.githubusercontent.com/dhiksn/auto-deploy/main/Tawal.png)
 
 **Setelah jalan — cek status repo & AI commit:**
-![Deploy running](Takhir.png)
+![Deploy running](https://raw.githubusercontent.com/dhiksn/auto-deploy/main/Takhir.png)
 
 ---
 
@@ -32,7 +32,7 @@ AutoDeploy AI adalah CLI yang mengotomatisasi proses deploy project ke GitHub:
 pip install autodeploy-ai
 ```
 
-Setelah install, command `deploy` langsung tersedia dari terminal mana pun.
+Setelah install, command `autodeploy` langsung tersedia dari terminal mana pun.
 
 ---
 
