@@ -89,8 +89,10 @@ def _parse_env_file(path: Path):
 def load_env():
     # 1. Home directory config (~/.autodeploy.env) — berlaku global
     _parse_env_file(Path.home() / ".autodeploy.env")
-    # 2. Local project .env — override home config
+    # 2. .env di folder script (untuk development lokal)
     _parse_env_file(Path(__file__).parent / ".env")
+    # 3. .env di current working directory — override semua
+    _parse_env_file(Path.cwd() / ".env")
 
 
 load_env()
@@ -333,6 +335,19 @@ def run_uninstall():
     if not uninstalled_any:
         console.print(f"  [{C_DIM}]Tidak ada package yang ditemukan.[/]")
         console.print(f"  [{C_DIM}]Coba manual: pip uninstall autodeploy-ai[/]")
+
+    # Hapus folder corrupt ~utodeploy* yang sering muncul setelah pip install
+    import site
+    for site_dir in site.getsitepackages():
+        site_path = Path(site_dir)
+        if site_path.exists():
+            for folder in site_path.glob("~utodeploy*"):
+                try:
+                    import shutil
+                    shutil.rmtree(folder) if folder.is_dir() else folder.unlink()
+                    console.print(f"  [{C_OK}]✓[/]  Hapus sisa corrupt  [{C_DIM}]{folder.name}[/]")
+                except Exception:
+                    pass
 
     console.print()
     console.print(Panel(
