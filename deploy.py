@@ -367,33 +367,49 @@ def _call_ollama(diff: str) -> str:
 
 
 def generate_commit_message(diff: str) -> str:
-    """Generate AI commit message, then let user confirm or override."""
+    """Generate AI commit message pakai spinner, lalu user confirm atau override."""
     ai_msg = ""
+    stop   = threading.Event()
+    frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
-    with Progress(
-        TextColumn("  "),
-        BarColumn(bar_width=20, style=C_DIM, complete_style=C_ACCENT, finished_style=C_OK),
-        TextColumn(f"[{C_LABEL}]{AI_PROVIDER.upper()} thinking...[/]"),
-        console=console,
-        transient=True,
-    ) as pg:
-        pg.add_task("", total=None)
-        try:
-            if AI_PROVIDER == "openai":
-                if not OPENAI_KEY:
-                    raise ValueError("OPENAI_API_KEY tidak ada di .env")
-                ai_msg = _call_openai(diff)
-            elif AI_PROVIDER == "groq":
-                if not GROQ_KEY:
-                    raise ValueError("GROQ_API_KEY tidak ada di .env")
-                ai_msg = _call_groq(diff)
-            elif AI_PROVIDER == "ollama":
-                ai_msg = _call_ollama(diff)
-            else:
-                raise ValueError(f"AI provider tidak dikenal: {AI_PROVIDER}")
-        except Exception as exc:
-            ai_msg = ""
-            console.print(f"\n  [{C_WARN}]![/] [{C_DIM}]AI gagal: {escape(str(exc))}[/]")
+    def _spin():
+        i = 0
+        while not stop.is_set():
+            sys.stdout.write(f"\r  \033[2m{frames[i % len(frames)]}\033[0m  Generating commit message...")
+            sys.stdout.flush()
+            time.sleep(0.08)
+            i += 1
+
+    t = threading.Thread(target=_spin, daemon=True)
+    t.start()
+    try:
+        if AI_PROVIDER == "openai":
+            if not OPENAI_KEY:
+                raise ValueError("OPENAI_API_KEY tidak ada di .env")
+            ai_msg = _call_openai(diff)
+        elif AI_PROVIDER == "groq":
+            if not GROQ_KEY:
+                raise ValueError("GROQ_API_KEY tidak ada di .env")
+            ai_msg = _call_groq(diff)
+        elif AI_PROVIDER == "ollama":
+            ai_msg = _call_ollama(diff)
+        else:
+            raise ValueError(f"AI provider tidak dikenal: {AI_PROVIDER}")
+    except Exception as exc:
+        ai_msg = ""
+        stop.set()
+        t.join()
+        sys.stdout.write("\r" + " " * 60 + "\r")
+        sys.stdout.flush()
+        console.print(f"  [{C_ERR}]✗[/]  Generating commit message")
+        ui_warn(f"AI gagal: {str(exc)}")
+    else:
+        stop.set()
+        t.join()
+        sys.stdout.write("\r" + " " * 60 + "\r")
+        sys.stdout.flush()
+        if ai_msg:
+            console.print(f"  [{C_OK}]✓[/]  Generating commit message")
 
     if ai_msg:
         console.print()
@@ -415,7 +431,7 @@ def generate_commit_message(diff: str) -> str:
         except EOFError:
             return ai_msg
         except KeyboardInterrupt:
-            raise  # naik ke main_cli, stop deploy
+            raise
         return override if override else ai_msg
 
     # AI failed — manual fallback
@@ -429,7 +445,7 @@ def generate_commit_message(diff: str) -> str:
     except EOFError:
         msg = ""
     except KeyboardInterrupt:
-        raise  # naik ke main_cli, stop deploy
+        raise
     return msg
 
 
@@ -547,6 +563,7 @@ def deploy(github_url: str = ""):
     if not commit_msg:
         ui_error("Commit message kosong. Deploy dibatalkan.")
         sys.exit(1)
+    console.print()
 
     # ── git commit ────────────────────────────────────────────────────────────
     result = spin_run(["git", "commit", "-m", commit_msg], "Creating commit")
@@ -555,7 +572,6 @@ def deploy(github_url: str = ""):
         sys.exit(1)
 
     # ── git push ──────────────────────────────────────────────────────────────
-    console.print()
     result = spin_run(["git", "push", "-u", "origin", branch], "Pushing to GitHub")
     if result.returncode != 0:
         ui_error(
