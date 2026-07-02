@@ -1,0 +1,8 @@
+deploy.py
+pyproject.toml
+autodeploy_cli.egg-info/PKG-INFO
+autodeploy_cli.egg-info/SOURCES.txt
+autodeploy_cli.egg-info/dependency_links.txt
+autodeploy_cli.egg-info/entry_points.txt
+autodeploy_cli.egg-info/requires.txt
+autodeploy_cli.egg-info/top_level.txt

@@ -549,7 +549,8 @@ def deploy(github_url: str = ""):
 #  ENTRYPOINT
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-if __name__ == "__main__":
+def main_cli():
+    """Entrypoint untuk global CLI command `deploy`."""
     github_url = sys.argv[1] if len(sys.argv) > 1 else ""
     try:
         deploy(github_url)
@@ -560,3 +561,7 @@ if __name__ == "__main__":
         console.print(Align.center(Text("─" * 56, style=C_DIM)))
         console.print()
         sys.exit(0)
+
+
+if __name__ == "__main__":
+    main_cli()

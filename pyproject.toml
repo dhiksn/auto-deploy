@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autodeploy-cli"
+version = "1.0.0"
+description = "Git Init · AI Commit · Auto Push CLI"
+requires-python = ">=3.10"
+dependencies = [
+    "rich",
+    "prompt_toolkit",
+    "pyfiglet",
+]
+
+[project.scripts]
+deploy = "deploy:main_cli"
+
+[tool.setuptools]
+py-modules = ["deploy"]

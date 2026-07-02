@@ -1,0 +1,2 @@
+[console_scripts]
+deploy = deploy:main_cli
