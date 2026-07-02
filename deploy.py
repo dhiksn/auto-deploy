@@ -90,10 +90,8 @@ def load_env():
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     key, _, value = line.partition("=")
-                    os.environ.setdefault(
-                        key.strip(),
-                        value.strip().strip('"').strip("'")
-                    )
+                    # Selalu override dari .env, jangan pakai setdefault
+                    os.environ[key.strip()] = value.strip().strip('"').strip("'")
 
 load_env()
 
@@ -309,6 +307,7 @@ def _call_groq(diff: str) -> str:
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {GROQ_KEY}",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         },
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
