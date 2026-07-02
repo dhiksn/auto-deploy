@@ -74,16 +74,24 @@ PT_STYLE = PTStyle.from_dict({
 LOGO = "Slant"  # pyfiglet font
 
 # ── Load .env ─────────────────────────────────────────────────────────────────
+def _parse_env_file(path: Path):
+    """Parse dan load satu file .env ke os.environ."""
+    if not path.exists():
+        return
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, _, value = line.partition("=")
+                os.environ[key.strip()] = value.strip().strip('"').strip("'")
+
+
 def load_env():
-    env_file = Path(__file__).parent / ".env"
-    if env_file.exists():
-        with open(env_file) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    key, _, value = line.partition("=")
-                    # Selalu override dari .env, jangan pakai setdefault
-                    os.environ[key.strip()] = value.strip().strip('"').strip("'")
+    # 1. Home directory config (~/.autodeploy.env) — berlaku global
+    _parse_env_file(Path.home() / ".autodeploy.env")
+    # 2. Local project .env — override home config
+    _parse_env_file(Path(__file__).parent / ".env")
+
 
 load_env()
 
@@ -96,6 +104,175 @@ OLLAMA_MODEL   = os.environ.get("OLLAMA_MODEL", "llama3")
 OPENAI_MODEL   = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 GROQ_MODEL     = os.environ.get("GROQ_MODEL", "llama3-8b-8192")
 DEFAULT_BRANCH = os.environ.get("DEFAULT_BRANCH", "main")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  SETUP WIZARD
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ENV_PATH = Path.home() / ".autodeploy.env"
+
+def is_configured() -> bool:
+    """Cek apakah sudah ada konfigurasi AI yang valid."""
+    provider = os.environ.get("AI_PROVIDER", "")
+    if not provider:
+        return False
+    if provider == "groq" and not os.environ.get("GROQ_API_KEY", ""):
+        return False
+    if provider == "openai" and not os.environ.get("OPENAI_API_KEY", ""):
+        return False
+    # ollama tidak butuh API key
+    return True
+
+
+def run_setup_wizard():
+    """Setup wizard interaktif untuk konfigurasi pertama kali."""
+    ui_clear()
+    ui_banner()
+
+    console.print(Panel(
+        f"[{C_VAL}]Selamat datang di AutoDeploy AI![/]\n\n"
+        f"[{C_DIM}]Sepertinya ini pertama kali kamu menjalankan [/][{C_ACCENT}]autodeploy[/][{C_DIM}].\n"
+        f"Setup ini hanya perlu dilakukan sekali.\n"
+        f"Konfigurasi akan disimpan di [/][{C_ACCENT}]~/.autodeploy.env[/]",
+        title="[bold white] ✦  FIRST TIME SETUP [/]",
+        title_align="left",
+        border_style=C_ACCENT,
+        box=SQUARE,
+        padding=(1, 2),
+    ))
+    console.print()
+
+    # ── Pilih provider ────────────────────────────────────────────────────────
+    console.print(f"  [{C_VAL}]Pilih AI provider:[/]\n")
+    console.print(f"  [{C_DIM}]1.[/]  [{C_OK}]Groq[/]      [{C_DIM}]— gratis, cepat  (https://console.groq.com/keys)[/]")
+    console.print(f"  [{C_DIM}]2.[/]  [{C_ACCENT}]Ollama[/]    [{C_DIM}]— lokal, gratis, tidak perlu API key[/]")
+    console.print(f"  [{C_DIM}]3.[/]  [{C_LABEL}]OpenAI[/]    [{C_DIM}]— berbayar       (https://platform.openai.com/api-keys)[/]")
+    console.print()
+
+    while True:
+        try:
+            choice = pt_prompt(
+                HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>Provider (1/2/3)  </ansicyan>'),
+                style=PT_STYLE,
+            ).strip()
+        except (KeyboardInterrupt, EOFError):
+            raise KeyboardInterrupt
+
+        if choice == "1":
+            provider = "groq"
+            break
+        elif choice == "2":
+            provider = "ollama"
+            break
+        elif choice == "3":
+            provider = "openai"
+            break
+        else:
+            ui_warn("Masukkan 1, 2, atau 3.")
+
+    config_lines = [f"AI_PROVIDER={provider}"]
+
+    # ── API key (Groq / OpenAI) ───────────────────────────────────────────────
+    if provider == "groq":
+        console.print()
+        console.print(Panel(
+            f"[{C_DIM}]Daftar gratis di [/][{C_ACCENT}]https://console.groq.com/keys[/][{C_DIM}]\n"
+            f"lalu buat API key baru dan paste di bawah.[/]",
+            border_style=C_DIM, box=SQUARE, padding=(0, 2),
+        ))
+        console.print()
+        while True:
+            try:
+                key = pt_prompt(
+                    HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>Groq API Key  </ansicyan>'),
+                    style=PT_STYLE,
+                    placeholder="  gsk_...",
+                ).strip()
+            except (KeyboardInterrupt, EOFError):
+                raise KeyboardInterrupt
+            if key.startswith("gsk_") and len(key) > 20:
+                break
+            ui_warn("API key tidak valid. Harus diawali 'gsk_'.")
+        config_lines += [
+            f"GROQ_API_KEY={key}",
+            "GROQ_MODEL=llama-3.1-8b-instant",
+        ]
+
+    elif provider == "openai":
+        console.print()
+        console.print(Panel(
+            f"[{C_DIM}]Dapatkan API key di [/][{C_ACCENT}]https://platform.openai.com/api-keys[/]",
+            border_style=C_DIM, box=SQUARE, padding=(0, 2),
+        ))
+        console.print()
+        while True:
+            try:
+                key = pt_prompt(
+                    HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>OpenAI API Key  </ansicyan>'),
+                    style=PT_STYLE,
+                    placeholder="  sk-...",
+                ).strip()
+            except (KeyboardInterrupt, EOFError):
+                raise KeyboardInterrupt
+            if key.startswith("sk-") and len(key) > 20:
+                break
+            ui_warn("API key tidak valid. Harus diawali 'sk-'.")
+        config_lines += [
+            f"OPENAI_API_KEY={key}",
+            "OPENAI_MODEL=gpt-4o-mini",
+        ]
+
+    elif provider == "ollama":
+        console.print()
+        console.print(Panel(
+            f"[{C_DIM}]Pastikan Ollama sudah running di lokal.\n"
+            f"Download: [/][{C_ACCENT}]https://ollama.com[/]",
+            border_style=C_DIM, box=SQUARE, padding=(0, 2),
+        ))
+        console.print()
+        try:
+            model = pt_prompt(
+                HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>Model name  </ansicyan>'),
+                style=PT_STYLE,
+                placeholder="  llama3.2:latest",
+            ).strip()
+        except (KeyboardInterrupt, EOFError):
+            raise KeyboardInterrupt
+        model = model or "llama3.2:latest"
+        config_lines += [
+            "OLLAMA_URL=http://localhost:11434",
+            f"OLLAMA_MODEL={model}",
+        ]
+
+    # ── Simpan ke ~/.autodeploy.env ───────────────────────────────────────────
+    config_lines.append("DEFAULT_BRANCH=main")
+    ENV_PATH.write_text("\n".join(config_lines) + "\n", encoding="utf-8")
+
+    # ── Reload config ─────────────────────────────────────────────────────────
+    _parse_env_file(ENV_PATH)
+    global AI_PROVIDER, OPENAI_KEY, GROQ_KEY, OLLAMA_URL, OLLAMA_MODEL, OPENAI_MODEL, GROQ_MODEL
+    AI_PROVIDER  = os.environ.get("AI_PROVIDER", "openai")
+    OPENAI_KEY   = os.environ.get("OPENAI_API_KEY", "")
+    GROQ_KEY     = os.environ.get("GROQ_API_KEY", "")
+    OLLAMA_URL   = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+    OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:latest")
+    OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+    GROQ_MODEL   = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
+
+    console.print()
+    console.print(Panel(
+        f"[{C_OK}]✓  Setup selesai![/]\n\n"
+        f"[{C_DIM}]Konfigurasi disimpan di [/][{C_ACCENT}]~/.autodeploy.env[/]\n"
+        f"[{C_DIM}]Untuk mengubah, edit file tersebut atau jalankan [/][{C_ACCENT}]autodeploy --setup[/]",
+        border_style=C_OK, box=SQUARE, padding=(1, 2),
+    ))
+    console.print()
+    try:
+        console.print(f"  [{C_DIM}]Tekan Enter untuk melanjutkan deploy...[/]", end="")
+        input()
+    except (KeyboardInterrupt, EOFError):
+        pass
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -684,8 +861,32 @@ def deploy(github_url: str = ""):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 def main_cli():
-    """Entrypoint untuk global CLI command `deploy`."""
-    github_url = sys.argv[1] if len(sys.argv) > 1 else ""
+    """Entrypoint untuk global CLI command `autodeploy`."""
+    args = sys.argv[1:]
+
+    # Flag --setup → paksa jalankan wizard ulang
+    if "--setup" in args:
+        try:
+            run_setup_wizard()
+        except KeyboardInterrupt:
+            console.print()
+            console.print(Align.center(Text("Setup dibatalkan", style=C_DIM)))
+            console.print()
+        sys.exit(0)
+
+    # Pertama kali — belum dikonfigurasi
+    if not is_configured():
+        try:
+            run_setup_wizard()
+        except KeyboardInterrupt:
+            console.print()
+            console.print(Align.center(Text("─" * 56, style=C_DIM)))
+            console.print(Align.center(Text("Setup dibatalkan", style=C_DIM)))
+            console.print(Align.center(Text("─" * 56, style=C_DIM)))
+            console.print()
+            sys.exit(0)
+
+    github_url = args[0] if args and not args[0].startswith("--") else ""
     try:
         deploy(github_url)
     except KeyboardInterrupt:

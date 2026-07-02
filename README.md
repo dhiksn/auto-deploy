@@ -7,10 +7,10 @@ AutoDeploy AI adalah CLI yang mengotomatisasi proses deploy project ke GitHub:
 - AI generate commit message
 - Push ke GitHub dalam satu command
 
-**Setup — masukin URL repo GitHub buat pertama kali:**
+**Tampilan Awal**
 ![Setup deploy](https://raw.githubusercontent.com/dhiksn/auto-deploy/main/Tawal.png)
 
-**Setelah jalan — cek status repo & AI commit:**
+**Tampilan Akhir**
 ![Deploy running](https://raw.githubusercontent.com/dhiksn/auto-deploy/main/Takhir.png)
 
 ---
@@ -22,7 +22,8 @@ AutoDeploy AI adalah CLI yang mengotomatisasi proses deploy project ke GitHub:
 - **Validasi repo** — cek apakah repo GitHub benar-benar ada sebelum deploy
 - **AI generate commit message** pakai Groq, OpenAI, atau Ollama
 - **Spinner animasi** di tiap step — staging, generating, commit, push
-- **Global CLI** — bisa dipanggil dari folder project mana pun tanpa copy file
+- **Setup wizard** — pertama kali jalan langsung guided setup, tidak perlu config manual
+- **Global CLI** — bisa dipanggil dari folder project mana pun
 
 ---
 
@@ -36,41 +37,6 @@ Setelah install, command `autodeploy` langsung tersedia dari terminal mana pun.
 
 ---
 
-## Setup
-
-Buat file `.env` di folder manapun lo mau deploy, atau di home directory:
-
-```bash
-# Windows
-copy .env.example .env
-
-# Linux / Mac
-cp .env.example .env
-```
-
-Edit `.env` sesuai provider AI yang lo pakai:
-
-```env
-# Pilih provider: groq | openai | ollama
-AI_PROVIDER=groq
-
-# Groq (gratis, cepat) — https://console.groq.com/keys
-GROQ_API_KEY=gsk_...
-GROQ_MODEL=llama-3.1-8b-instant
-
-# Ollama (lokal, tidak perlu API key)
-# OLLAMA_URL=http://localhost:11434
-# OLLAMA_MODEL=llama3.2:latest
-
-# OpenAI
-# OPENAI_API_KEY=sk-...
-# OPENAI_MODEL=gpt-4o-mini
-```
-
-> **Penting:** jangan pernah commit file `.env` karena berisi API key.
-
----
-
 ## Cara Pakai
 
 ```bash
@@ -81,7 +47,37 @@ autodeploy https://github.com/username/repo-name
 autodeploy
 ```
 
-### Flow yang terjadi
+Pertama kali menjalankan `autodeploy`, wizard setup akan otomatis muncul untuk mengatur provider AI dan API key. Konfigurasi disimpan di `~/.autodeploy.env` dan berlaku dari folder mana pun.
+
+Untuk mengubah konfigurasi:
+
+```bash
+autodeploy --setup
+```
+
+---
+
+## Setup Wizard
+
+Saat pertama kali jalan, wizard akan memandu:
+
+```
+✦  FIRST TIME SETUP
+
+Pilih AI provider:
+  1.  Groq    — gratis, cepat
+  2.  Ollama  — lokal, gratis, tidak perlu API key
+  3.  OpenAI  — berbayar
+
+> Provider (1/2/3)
+> Groq API Key   gsk_...
+
+✓  Setup selesai! Disimpan di ~/.autodeploy.env
+```
+
+---
+
+## Flow Deploy
 
 ```
   ✓  Staging changes            → git add .
@@ -105,8 +101,6 @@ Kalau project belum ada `.git`, sebelum flow di atas akan otomatis:
 | `groq` | `llama-3.1-8b-instant` | Online, gratis, cepat | [console.groq.com](https://console.groq.com/keys) |
 | `ollama` | `llama3.2:latest` | Lokal, gratis, butuh Ollama running | Tidak perlu |
 | `openai` | `gpt-4o-mini` | Online, berbayar | [platform.openai.com](https://platform.openai.com/api-keys) |
-
-Untuk ganti provider, ubah `AI_PROVIDER` di file `.env`.
 
 ---
 
