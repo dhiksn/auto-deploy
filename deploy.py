@@ -50,7 +50,7 @@ from prompt_toolkit.formatted_text import HTML
 # ── Console ───────────────────────────────────────────────────────────────────
 console = Console(highlight=False, soft_wrap=True)
 
-APP_VERSION = "1.5.8"
+APP_VERSION = "1.6.1"
 
 # ── Theme: teal + amber (no purple, no blue) ──────────────────────────────────
 C_HEAD   = "bold turquoise2"
@@ -321,7 +321,7 @@ def run_uninstall():
         frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
         stop = threading.Event()
         result_box = []
-
+   
         def _spin():
             i = 0
             while not stop.is_set():
@@ -763,7 +763,7 @@ def validate_github_url(url: str) -> tuple[bool, str]:
     try:
         req = urllib.request.Request(
             api_url,
-            headers={"User-Agent": "AutoDeploy-CLI/1.5"}
+            headers={"User-Agent": "AutoDeploy-CLI/1.6"}
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             if resp.status == 200:
