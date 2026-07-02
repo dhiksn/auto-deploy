@@ -16,6 +16,7 @@ import sys
 import json
 import subprocess
 import time
+import threading
 from pathlib import Path
 
 # ── Auto-install dependencies ─────────────────────────────────────────────────
@@ -536,9 +537,7 @@ def deploy(github_url: str = ""):
         sys.exit(0)
 
     # ── git add . ─────────────────────────────────────────────────────────────
-    console.print(f"  [{C_DIM}]⠸[/]  Staging changes...", end="\r")
-    result = run(["git", "add", "."], capture=True)
-    console.print(f"  [{C_OK}]✓[/]  Staging changes...   ")
+    result = spin_run(["git", "add", "."], "Staging changes")
 
     # ── Ambil diff ────────────────────────────────────────────────────────────
     diff = git_diff_staged()
@@ -550,19 +549,15 @@ def deploy(github_url: str = ""):
         sys.exit(1)
 
     # ── git commit ────────────────────────────────────────────────────────────
-    console.print(f"  [{C_DIM}]⠸[/]  Creating commit...", end="\r")
-    result = run(["git", "commit", "-m", commit_msg], capture=True)
+    result = spin_run(["git", "commit", "-m", commit_msg], "Creating commit")
     if result.returncode != 0:
-        console.print(f"  [{C_ERR}]✗[/]  Creating commit...   ")
         ui_error(f"git commit gagal.\n{(result.stderr or '').strip()}")
         sys.exit(1)
-    console.print(f"  [{C_OK}]✓[/]  Creating commit...   ")
 
     # ── git push ──────────────────────────────────────────────────────────────
-    console.print(f"  [{C_DIM}]⠸[/]  Pushing to GitHub...", end="\r")
-    result = run(["git", "push", "-u", "origin", branch], capture=True)
+    console.print()
+    result = spin_run(["git", "push", "-u", "origin", branch], "Pushing to GitHub")
     if result.returncode != 0:
-        console.print(f"  [{C_ERR}]✗[/]  Pushing to GitHub...   ")
         ui_error(
             f"git push gagal.\n\n"
             f"[{C_DIM}]Kemungkinan penyebab:[/]\n"
@@ -572,7 +567,6 @@ def deploy(github_url: str = ""):
             f"[{C_DIM}]{escape((result.stderr or '').strip())}[/]"
         )
         sys.exit(1)
-    console.print(f"  [{C_OK}]✓[/]  Pushing to GitHub...   ")
 
     ui_success(commit_msg, branch, remote)
 
