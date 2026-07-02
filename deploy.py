@@ -50,7 +50,7 @@ from prompt_toolkit.formatted_text import HTML
 # ── Console ───────────────────────────────────────────────────────────────────
 console = Console(highlight=False, soft_wrap=True)
 
-APP_VERSION = "1.5.6"
+APP_VERSION = "1.5.8"
 
 # ── Theme: teal + amber (no purple, no blue) ──────────────────────────────────
 C_HEAD   = "bold turquoise2"
@@ -312,16 +312,26 @@ def run_uninstall():
     else:
         console.print(f"  [{C_DIM}]–[/]  Config tidak ditemukan, dilewati")
 
-    # Uninstall package via pip
-    console.print(f"  [{C_DIM}]⠸[/]  Menghapus package autodeploy-ai...", end="\r")
-    result = subprocess.run(
-        [sys.executable, "-m", "pip", "uninstall", "autodeploy-ai", "-y"],
-        capture_output=True, text=True,
-    )
-    if result.returncode == 0:
-        console.print(f"  [{C_OK}]✓[/]  Package autodeploy-ai dihapus         ")
-    else:
-        console.print(f"  [{C_ERR}]✗[/]  Gagal uninstall via pip               ")
+    # Uninstall semua variant package (termasuk editable install lama)
+    packages = ["autodeploy-ai", "autodeploy-cli", "autodeploy_ai", "autodeploy_cli"]
+    uninstalled_any = False
+    for pkg in packages:
+        # Cek dulu apakah package terpasang
+        check = subprocess.run(
+            [sys.executable, "-m", "pip", "show", pkg],
+            capture_output=True, text=True,
+        )
+        if check.returncode != 0:
+            continue  # tidak terpasang, skip
+        result = spin_run(
+            [sys.executable, "-m", "pip", "uninstall", pkg, "-y"],
+            f"Menghapus {pkg}"
+        )
+        if result.returncode == 0:
+            uninstalled_any = True
+
+    if not uninstalled_any:
+        console.print(f"  [{C_DIM}]Tidak ada package yang ditemukan.[/]")
         console.print(f"  [{C_DIM}]Coba manual: pip uninstall autodeploy-ai[/]")
 
     console.print()
