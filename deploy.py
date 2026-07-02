@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 """
 ┌────────────────────────────────────────────────┐
-│              AutoDeploy CLI                     │
-│     Git Init · AI Commit · Auto Push            │
-│                                                  │
-│  Requires:                                       │
-│    pip install rich prompt_toolkit               │
+│              AutoDeploy CLI                    │
+│     Git Init · AI Commit · Auto Push           │
+│                                                │
+│  Requires:                                     │
+│    pip install rich prompt_toolkit             │
 └────────────────────────────────────────────────┘
 
-Usage:
-  python deploy.py                            # project sudah punya remote
-  python deploy.py https://github.com/u/repo  # project baru, kasih remote-nya
 """
 
 # ── Standard library ──────────────────────────────────────────────────────────
@@ -72,14 +69,7 @@ PT_STYLE = PTStyle.from_dict({
     "": "ansiwhite",
 })
 
-LOGO = r"""
-   _         _        ____             _
-  / \  _   _| |_ ___ |  _ \  ___ _ __ | | ___  _   _
- / _ \| | | | __/ _ \| | | |/ _ \ '_ \| |/ _ \| | | |
-/ ___ \ |_| | || (_) | |_| |  __/ |_) | | (_) | |_| |
-/_/   \_\__,_|\__\___/|____/ \___| .__/|_|\___/ \__, |
-                                 |_|             |___/
-"""
+LOGO = "small"  # pyfiglet font
 
 # ── Load .env ─────────────────────────────────────────────────────────────────
 def load_env():
@@ -115,8 +105,11 @@ def ui_clear():
 
 
 def ui_banner():
+    _ensure("pyfiglet")
+    import pyfiglet
+    fig = pyfiglet.figlet_format("AutoDeploy", font=LOGO)
     console.print()
-    for line in LOGO.strip("\n").splitlines():
+    for line in fig.strip("\n").splitlines():
         console.print(Align.center(Text(line, style=C_HEAD)))
     console.print()
     console.print(Align.center(Text(f"v{APP_VERSION}  ·  Git Init  ·  AI Commit  ·  Auto Push", style=C_DIM)))
@@ -128,10 +121,15 @@ def ui_splash():
     ui_clear()
     ui_banner()
     labels = ["Initialising", "Reading workspace", "Loading config", "Ready"]
+    term_width = os.get_terminal_size().columns if hasattr(os, "get_terminal_size") else 80
     for label in labels:
-        console.print(Align.center(Text(f"[ {label} ]", style=C_DIM)), end="\r")
+        text = f"[ {label} ]"
+        padded = text.center(term_width)
+        sys.stdout.write(f"\033[2K\r{padded}")
+        sys.stdout.flush()
         time.sleep(0.15)
-    console.print(" " * 40, end="\r")
+    sys.stdout.write("\033[2K\r")
+    sys.stdout.flush()
 
 
 def ui_header(repo_dir: str, branch: str, remote: str, ai_provider: str):
@@ -378,8 +376,10 @@ def generate_commit_message(diff: str) -> str:
                 style=PT_STYLE,
                 placeholder="  press Enter to accept, or type your own message",
             ).strip()
-        except (KeyboardInterrupt, EOFError):
+        except EOFError:
             return ai_msg
+        except KeyboardInterrupt:
+            raise  # naik ke main_cli, stop deploy
         return override if override else ai_msg
 
     # AI failed — manual fallback
@@ -390,8 +390,10 @@ def generate_commit_message(diff: str) -> str:
             style=PT_STYLE,
             placeholder="  e.g. feat(auth): add login endpoint",
         ).strip()
-    except (KeyboardInterrupt, EOFError):
+    except EOFError:
         msg = ""
+    except KeyboardInterrupt:
+        raise  # naik ke main_cli, stop deploy
     return msg
 
 
@@ -428,7 +430,7 @@ def deploy(github_url: str = ""):
                     placeholder="  https://github.com/username/repo",
                 ).strip()
             except (KeyboardInterrupt, EOFError):
-                github_url = ""
+                raise KeyboardInterrupt
 
         if not github_url:
             ui_error("GitHub URL diperlukan untuk repo baru.")
@@ -467,7 +469,7 @@ def deploy(github_url: str = ""):
                         placeholder="  https://github.com/username/repo",
                     ).strip()
                 except (KeyboardInterrupt, EOFError):
-                    github_url = ""
+                    raise KeyboardInterrupt
 
             if not github_url:
                 ui_error("GitHub URL diperlukan.")
@@ -500,7 +502,12 @@ def deploy(github_url: str = ""):
 
     # ── git add . ─────────────────────────────────────────────────────────────
     ui_step("Staging semua perubahan", "git add .")
-    run(["git", "add", "."])
+    result = run(["git", "add", "."], capture=True)
+    # Print warning dari git add dengan indent yang sejajar
+    output = ((result.stdout or "") + (result.stderr or "")).strip()
+    if output:
+        for line in output.splitlines():
+            console.print(f"  [{C_DIM}]{escape(line)}[/]")
 
     # ── Ambil diff ────────────────────────────────────────────────────────────
     diff = git_diff_staged()
