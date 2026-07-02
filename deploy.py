@@ -19,6 +19,12 @@ import time
 import threading
 from pathlib import Path
 
+# Fix UnicodeEncodeError di Windows terminal
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 # ── Auto-install dependencies ─────────────────────────────────────────────────
 def _ensure(pkg: str, import_as: str | None = None):
     import importlib
@@ -50,7 +56,7 @@ from prompt_toolkit.formatted_text import HTML
 # ── Console ───────────────────────────────────────────────────────────────────
 console = Console(highlight=False, soft_wrap=True)
 
-APP_VERSION = "1.6.3"
+APP_VERSION = "1.6.8"
 
 # ── Theme: teal + amber (no purple, no blue) ──────────────────────────────────
 C_HEAD   = "bold turquoise2"
@@ -314,87 +320,93 @@ def run_uninstall():
     else:
         console.print(f"  [{C_DIM}]–[/]  Config tidak ditemukan, dilewati")
 
-    # Uninstall semua variant package (termasuk editable install lama)
-    packages = ["autodeploy-ai", "autodeploy-cli", "autodeploy_ai", "autodeploy_cli"]
-    uninstalled_any = False
-    for pkg in packages:
-        frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-        stop = threading.Event()
-        result_box = []
-   
-        def _spin():
-            i = 0
-            while not stop.is_set():
-                sys.stdout.write(f"\r  \033[2m{frames[i % len(frames)]}\033[0m  Menghapus {pkg}...")
-                sys.stdout.flush()
-                time.sleep(0.08)
-                i += 1
-
-        t = threading.Thread(target=_spin, daemon=True)
-        t.start()
-        r = subprocess.run(
-            [sys.executable, "-m", "pip", "uninstall", pkg, "-y"],
-            capture_output=True, text=True,
-        )
-        stop.set()
-        t.join()
-        sys.stdout.write("\r" + " " * 60 + "\r")
-        sys.stdout.flush()
-        result_box.append(r)
-
-        stdout = (r.stdout or "").lower()
-        stderr = (r.stderr or "").lower()
-        combined = stdout + stderr
-        not_found = "not installed" in combined or "skipping" in combined or "tidak terpasang" in combined or "tidak ditemukan" in combined
-        # Cek berhasil berdasarkan returncode (0 = sukses) dan bukan not found
-        success = r.returncode == 0 and not not_found
-
-        if not_found:
-            continue
-        elif success:
-            console.print(f"  [{C_OK}]✓[/]  Menghapus {pkg}")
-            uninstalled_any = True
-        else:
-            console.print(f"  [{C_ERR}]✗[/]  Gagal menghapus {pkg}")
-
-    if not uninstalled_any:
-        console.print(f"  [{C_DIM}]Tidak ada package yang ditemukan.[/]")
-        console.print(f"  [{C_DIM}]Coba manual: pip uninstall autodeploy-ai[/]")
-
-    # Hapus folder corrupt ~utodeploy* yang sering muncul setelah pip install
-    # dan hapus juga autodeploy.exe yang mungkin tertinggal di Scripts
-    import site, shutil
-
-    # Scripts dir — tempat autodeploy.exe berada
+    # Scripts dir dan site-packages
     scripts_dir = Path(sys.executable).parent / "Scripts" \
         if (Path(sys.executable).parent / "Scripts").exists() \
         else Path(sys.executable).parent
 
-    for f in scripts_dir.glob("autodeploy*"):
+    # Buat script uninstall temporer untuk menghapus setelah kita keluar
+    import tempfile
+    import atexit
+    import site
+    import shutil
+
+    uninstall_script = tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8')
+    uninstall_script.write(f'''
+import sys
+import subprocess
+import time
+import site
+import shutil
+from pathlib import Path
+
+scripts_dir = Path(r"{scripts_dir}")
+site_dirs = {site.getsitepackages()}
+
+print("Menghapus sisa file autodeploy...")
+
+# Tunggu sebentar agar proses utama selesai
+time.sleep(1)
+
+# Hapus semua autodeploy* di scripts
+for f in scripts_dir.glob("autodeploy*"):
+    try:
+        f.unlink()
+        print(f"  ✓ Hapus script: {{f.name}}")
+    except Exception:
+        pass
+
+# Hapus package via pip
+for pkg in ["autodeploy-ai", "autodeploy-cli", "autodeploy_ai", "autodeploy_cli"]:
+    try:
+        subprocess.run([sys.executable, "-m", "pip", "uninstall", pkg, "-y"],
+                  capture_output=True, text=True)
+        print(f"  ✓ Uninstall package: {{pkg}}")
+    except Exception:
+        pass
+
+# Hapus sisa corrupt
+for site_dir in site_dirs:
+    site_path = Path(site_dir)
+    if not site_path.exists():
+        continue
+    for entry in site_path.glob("~utodeploy*"):
         try:
-            f.unlink()
-            console.print(f"  [{C_OK}]✓[/]  Hapus script  [{C_DIM}]{f.name}[/]")
+            if entry.is_dir():
+                shutil.rmtree(entry)
+            else:
+                entry.unlink()
+            print(f"  ✓ Hapus sisa corrupt: {{entry.name}}")
         except Exception:
             pass
 
-    for site_dir in site.getsitepackages():
-        site_path = Path(site_dir)
-        if not site_path.exists():
-            continue
-        for entry in site_path.glob("~utodeploy*"):
-            try:
-                shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
-                console.print(f"  [{C_OK}]✓[/]  Hapus sisa corrupt  [{C_DIM}]{entry.name}[/]")
-            except Exception:
-                pass
+print()
+print("✓ Uninstall selesai!")
+''')
+    uninstall_script.close()
+
+    # Jalankan script uninstall di background tanpa buka jendela baru
+    startupinfo = None
+    if sys.platform == "win32":
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = subprocess.SW_HIDE
+
+    subprocess.Popen([sys.executable, uninstall_script.name],
+                startupinfo=startupinfo,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL)
 
     console.print()
     console.print(Panel(
-        f"[{C_OK}]Uninstall selesai.[/]\n\n"
-        f"[{C_DIM}]Terima kasih sudah menggunakan AutoDeploy AI![/]",
+        f"[{C_OK}]Uninstall dimulai...[/]\n\n"
+        f"[{C_DIM}]Program akan keluar dan uninstall akan selesai dalam beberapa detik.",
         border_style=C_OK, box=SQUARE, padding=(1, 2),
     ))
     console.print()
+
+    # Keluar segera agar file exe kita tidak terkunci
+    sys.exit(0)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
