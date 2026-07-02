@@ -16,11 +16,15 @@
 
 ## Install
 
+Clone repo ini, lalu install sebagai global command:
+
 ```bash
-pip install -e "path/to/auto-deploy"
+git clone https://github.com/dhiksn/auto-deploy.git
+cd auto-deploy
+pip install -e .
 ```
 
-Setelah install, command `deploy` langsung tersedia global.
+Setelah install, command `deploy` langsung tersedia dari terminal mana pun.
 
 ---
 
@@ -32,16 +36,26 @@ Copy `.env.example` jadi `.env` lalu isi sesuai provider AI yang lo pakai:
 cp .env.example .env
 ```
 
+Edit `.env`:
+
 ```env
 # Pilih provider: openai | groq | ollama
-AI_PROVIDER=ollama
+AI_PROVIDER=groq
 
-OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.2:latest
+# Groq (gratis, cepat)
+GROQ_API_KEY=gsk_...
+GROQ_MODEL=llama-3.1-8b-instant
 
+# Ollama (lokal)
+# OLLAMA_URL=http://localhost:11434
+# OLLAMA_MODEL=llama3.2:latest
+
+# OpenAI
 # OPENAI_API_KEY=sk-...
-# GROQ_API_KEY=gsk_...
+# OPENAI_MODEL=gpt-4o-mini
 ```
+
+> **Penting:** file `.env` sudah di-ignore git. Jangan pernah commit file ini karena berisi API key.
 
 ---
 
@@ -76,11 +90,13 @@ deploy
 
 ## Provider AI
 
-| Provider | Keterangan | API Key |
-|---|---|---|
-| `ollama` | Lokal, gratis, butuh Ollama running | Tidak perlu |
-| `groq` | Online, gratis, cepat | [console.groq.com](https://console.groq.com) |
-| `openai` | GPT-4o-mini | [platform.openai.com](https://platform.openai.com) |
+| Provider | Model | Keterangan | API Key |
+|---|---|---|---|
+| `groq` | `llama-3.1-8b-instant` | Online, gratis, cepat | [console.groq.com](https://console.groq.com/keys) |
+| `ollama` | `llama3.2:latest` | Lokal, gratis, butuh Ollama running | Tidak perlu |
+| `openai` | `gpt-4o-mini` | Online, berbayar | [platform.openai.com](https://platform.openai.com/api-keys) |
+
+Untuk ganti provider, tinggal ubah `AI_PROVIDER` di file `.env`.
 
 ---
 
