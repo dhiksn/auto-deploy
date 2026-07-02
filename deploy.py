@@ -62,6 +62,7 @@ C_ERR    = "bright_red"
 C_DIM    = "grey35"
 C_TEXT   = "white"
 C_ACCENT = "turquoise2"
+C_DIM_ANSI = "2"   # ANSI dim untuk sys.stdout.write
 
 PT_STYLE = PTStyle.from_dict({
     "prompt":      "bold ansigreen",
@@ -228,6 +229,42 @@ def run(cmd: list[str], capture: bool = False) -> subprocess.CompletedProcess:
         encoding="utf-8",
         errors="replace",
     )
+
+
+def spin_run(cmd: list[str], label: str) -> subprocess.CompletedProcess:
+    """Jalankan command sambil tampilkan spinner animasi, lalu print status akhir."""
+    import threading
+    frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    stop   = threading.Event()
+    result_box: list[subprocess.CompletedProcess] = []
+
+    def _spin():
+        i = 0
+        while not stop.is_set():
+            sys.stdout.write(f"\r  \033[{C_DIM_ANSI}m{frames[i % len(frames)]}\033[0m  {label}...")
+            sys.stdout.flush()
+            time.sleep(0.08)
+            i += 1
+
+    t = threading.Thread(target=_spin, daemon=True)
+    t.start()
+    try:
+        result_box.append(subprocess.run(
+            cmd, capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+        ))
+    finally:
+        stop.set()
+        t.join()
+        sys.stdout.write("\r" + " " * 60 + "\r")
+        sys.stdout.flush()
+
+    result = result_box[0]
+    if result.returncode == 0:
+        console.print(f"  [{C_OK}]✓[/]  {label}")
+    else:
+        console.print(f"  [{C_ERR}]✗[/]  {label}")
+    return result
 
 
 def git_has_changes() -> bool:
