@@ -10,9 +10,6 @@ AutoDeploy AI adalah CLI yang mengotomatisasi proses deploy project ke GitHub:
 **Tampilan Awal**
 ![Setup deploy](https://raw.githubusercontent.com/dhiksn/auto-deploy/main/Tawal.png)
 
-**Tampilan Akhir**
-![Deploy running](https://raw.githubusercontent.com/dhiksn/auto-deploy/main/Takhir.png)
-
 ---
 
 ## Fitur
@@ -60,6 +57,9 @@ Untuk uninstall semuanya:
 ```bash
 autodeploy --uninstall
 ```
+
+**Tampilan Uninstall**
+![Uninstall Package](https://raw.githubusercontent.com/dhiksn/auto-deploy/main/uninstall.png)
 
 ---
 
