@@ -363,18 +363,20 @@ def run_uninstall():
     # Hapus folder corrupt ~utodeploy* yang sering muncul setelah pip install
     # dan hapus juga autodeploy.exe yang mungkin tertinggal di Scripts
     import site, shutil
-    scripts_dirs = [Path(sys.executable).parent]  # Scripts dir
-    site_dirs = site.getsitepackages()
 
-    for scripts_dir in scripts_dirs:
-        for f in scripts_dir.glob("autodeploy*"):
-            try:
-                f.unlink()
-                console.print(f"  [{C_OK}]✓[/]  Hapus script  [{C_DIM}]{f.name}[/]")
-            except Exception:
-                pass
+    # Scripts dir — tempat autodeploy.exe berada
+    scripts_dir = Path(sys.executable).parent / "Scripts" \
+        if (Path(sys.executable).parent / "Scripts").exists() \
+        else Path(sys.executable).parent
 
-    for site_dir in site_dirs:
+    for f in scripts_dir.glob("autodeploy*"):
+        try:
+            f.unlink()
+            console.print(f"  [{C_OK}]✓[/]  Hapus script  [{C_DIM}]{f.name}[/]")
+        except Exception:
+            pass
+
+    for site_dir in site.getsitepackages():
         site_path = Path(site_dir)
         if not site_path.exists():
             continue
