@@ -50,7 +50,7 @@ from prompt_toolkit.formatted_text import HTML
 # ── Console ───────────────────────────────────────────────────────────────────
 console = Console(highlight=False, soft_wrap=True)
 
-APP_VERSION = "1.5.3"
+APP_VERSION = "1.5.6"
 
 # ── Theme: teal + amber (no purple, no blue) ──────────────────────────────────
 C_HEAD   = "bold turquoise2"
@@ -273,6 +273,64 @@ def run_setup_wizard():
         input()
     except (KeyboardInterrupt, EOFError):
         pass
+
+
+def run_uninstall():
+    """Hapus konfigurasi dan uninstall package autodeploy-ai."""
+    ui_clear()
+    ui_banner()
+
+    console.print(Panel(
+        f"[{C_WARN}]Ini akan menghapus:[/]\n\n"
+        f"  [{C_DIM}]•[/]  Config file  [{C_ACCENT}]~/.autodeploy.env[/]\n"
+        f"  [{C_DIM}]•[/]  Package      [{C_ACCENT}]autodeploy-ai[/]  (pip uninstall)\n\n"
+        f"[{C_DIM}]Command [/][{C_ACCENT}]autodeploy[/][{C_DIM}] tidak akan bisa dipakai lagi.[/]",
+        title=f"[bold {C_WARN}] ✦  UNINSTALL [/]",
+        title_align="left",
+        border_style=C_WARN,
+        box=SQUARE,
+        padding=(1, 2),
+    ))
+    console.print()
+
+    try:
+        confirm = pt_prompt(
+            HTML(f'<ansibrightblack>  &gt; </ansibrightblack><ansiyellow>Yakin? (y/N)  </ansiyellow>'),
+            style=PT_STYLE,
+        ).strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        raise KeyboardInterrupt
+
+    if confirm not in ("y", "yes"):
+        console.print(f"\n  [{C_DIM}]Uninstall dibatalkan.[/]\n")
+        return
+
+    # Hapus config file
+    if ENV_PATH.exists():
+        ENV_PATH.unlink()
+        console.print(f"  [{C_OK}]✓[/]  Config dihapus  [{C_DIM}]{ENV_PATH}[/]")
+    else:
+        console.print(f"  [{C_DIM}]–[/]  Config tidak ditemukan, dilewati")
+
+    # Uninstall package via pip
+    console.print(f"  [{C_DIM}]⠸[/]  Menghapus package autodeploy-ai...", end="\r")
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "uninstall", "autodeploy-ai", "-y"],
+        capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        console.print(f"  [{C_OK}]✓[/]  Package autodeploy-ai dihapus         ")
+    else:
+        console.print(f"  [{C_ERR}]✗[/]  Gagal uninstall via pip               ")
+        console.print(f"  [{C_DIM}]Coba manual: pip uninstall autodeploy-ai[/]")
+
+    console.print()
+    console.print(Panel(
+        f"[{C_OK}]Uninstall selesai.[/]\n\n"
+        f"[{C_DIM}]Terima kasih sudah menggunakan AutoDeploy AI![/]",
+        border_style=C_OK, box=SQUARE, padding=(1, 2),
+    ))
+    console.print()
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -871,6 +929,16 @@ def main_cli():
         except KeyboardInterrupt:
             console.print()
             console.print(Align.center(Text("Setup dibatalkan", style=C_DIM)))
+            console.print()
+        sys.exit(0)
+
+    # Flag --uninstall → hapus config dan uninstall package
+    if "--uninstall" in args:
+        try:
+            run_uninstall()
+        except KeyboardInterrupt:
+            console.print()
+            console.print(Align.center(Text("Uninstall dibatalkan", style=C_DIM)))
             console.print()
         sys.exit(0)
 

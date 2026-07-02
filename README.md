@@ -55,6 +55,12 @@ Untuk mengubah konfigurasi:
 autodeploy --setup
 ```
 
+Untuk uninstall semuanya:
+
+```bash
+autodeploy --uninstall
+```
+
 ---
 
 ## Setup Wizard
@@ -103,9 +109,3 @@ Kalau project belum ada `.git`, sebelum flow di atas akan otomatis:
 | `openai` | `gpt-4o-mini` | Online, berbayar | [platform.openai.com](https://platform.openai.com/api-keys) |
 
 ---
-
-## Requirements
-
-- Python 3.10+
-- Git
-- Salah satu AI provider di atas
