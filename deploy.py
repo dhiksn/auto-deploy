@@ -345,8 +345,9 @@ def run_uninstall():
         stdout = (r.stdout or "").lower()
         stderr = (r.stderr or "").lower()
         combined = stdout + stderr
-        not_found = "not installed" in combined or "skipping" in combined
-        success = "successfully uninstalled" in combined or (r.returncode == 0 and not not_found)
+        not_found = "not installed" in combined or "skipping" in combined or "tidak terpasang" in combined or "tidak ditemukan" in combined
+        # Cek berhasil berdasarkan returncode (0 = sukses) dan bukan not found
+        success = r.returncode == 0 and not not_found
 
         if not_found:
             continue
