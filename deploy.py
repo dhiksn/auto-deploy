@@ -318,19 +318,43 @@ def run_uninstall():
     packages = ["autodeploy-ai", "autodeploy-cli", "autodeploy_ai", "autodeploy_cli"]
     uninstalled_any = False
     for pkg in packages:
-        # Cek dulu apakah package terpasang
-        check = subprocess.run(
-            [sys.executable, "-m", "pip", "show", pkg],
+        frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        stop = threading.Event()
+        result_box = []
+
+        def _spin():
+            i = 0
+            while not stop.is_set():
+                sys.stdout.write(f"\r  \033[2m{frames[i % len(frames)]}\033[0m  Menghapus {pkg}...")
+                sys.stdout.flush()
+                time.sleep(0.08)
+                i += 1
+
+        t = threading.Thread(target=_spin, daemon=True)
+        t.start()
+        r = subprocess.run(
+            [sys.executable, "-m", "pip", "uninstall", pkg, "-y"],
             capture_output=True, text=True,
         )
-        if check.returncode != 0:
-            continue  # tidak terpasang, skip
-        result = spin_run(
-            [sys.executable, "-m", "pip", "uninstall", pkg, "-y"],
-            f"Menghapus {pkg}"
-        )
-        if result.returncode == 0:
+        stop.set()
+        t.join()
+        sys.stdout.write("\r" + " " * 60 + "\r")
+        sys.stdout.flush()
+        result_box.append(r)
+
+        stdout = (r.stdout or "").lower()
+        stderr = (r.stderr or "").lower()
+        not_found = "not installed" in stdout or "skipping" in stdout or \
+                    "not installed" in stderr or "skipping" in stderr
+
+        if not_found:
+            # Package tidak ada, skip tanpa print apapun
+            continue
+        elif r.returncode == 0:
+            console.print(f"  [{C_OK}]✓[/]  Menghapus {pkg}")
             uninstalled_any = True
+        else:
+            console.print(f"  [{C_ERR}]✗[/]  Gagal menghapus {pkg}")
 
     if not uninstalled_any:
         console.print(f"  [{C_DIM}]Tidak ada package yang ditemukan.[/]")
