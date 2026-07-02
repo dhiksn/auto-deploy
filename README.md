@@ -27,7 +27,7 @@ AutoDeploy AI adalah CLI yang mengotomatisasi proses deploy project ke GitHub:
 ## Install
 
 ```bash
-pip install autodeploy-ai
+pip install autodeploy-ai --upgrade
 ```
 
 Setelah install, command `autodeploy` langsung tersedia dari terminal mana pun.
