@@ -56,7 +56,7 @@ from prompt_toolkit.formatted_text import HTML
 # ── Console ───────────────────────────────────────────────────────────────────
 console = Console(highlight=False, soft_wrap=True)
 
-APP_VERSION = "1.6.8"
+APP_VERSION = "1.6.9"
 
 # ── Theme: teal + amber (no purple, no blue) ──────────────────────────────────
 C_HEAD   = "bold turquoise2"
@@ -760,6 +760,74 @@ def generate_commit_message(diff: str) -> str:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  GITHUB CREDENTIAL HELPERS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def is_auth_error(stderr: str) -> bool:
+    """Deteksi apakah git push gagal karena masalah autentikasi."""
+    if not stderr:
+        return False
+    stderr_lower = stderr.lower()
+    auth_signals = [
+        "authentication failed",
+        "authorization failed",
+        "invalid username or password",
+        "remote: support for password authentication was removed",
+        "403",
+        "401",
+        "could not read username",
+        "could not read password",
+        "permission denied",
+        "fatal: repository not found",  # sering muncul saat akun salah
+        "remote: repository not found",
+    ]
+    return any(s in stderr_lower for s in auth_signals)
+
+
+def clear_github_credentials() -> bool:
+    """
+    Hapus credential GitHub dari:
+    1. Windows Credential Manager (cmdkey) — target: git:https://github.com
+    2. Git Credential Manager cache (git credential reject)
+    Return True kalau berhasil hapus setidaknya satu.
+    """
+    cleared = False
+
+    # ── 1. Windows Credential Manager via cmdkey ──────────────────────────────
+    if sys.platform == "win32":
+        targets = [
+            "git:https://github.com",
+            "git:https://www.github.com",
+            "github.com",
+        ]
+        for target in targets:
+            try:
+                result = subprocess.run(
+                    ["cmdkey", f"/delete:{target}"],
+                    capture_output=True, text=True,
+                )
+                if result.returncode == 0:
+                    cleared = True
+            except Exception:
+                pass
+
+    # ── 2. Git credential reject (cross-platform, hapus dari cache/store) ─────
+    credential_input = "protocol=https\nhost=github.com\n\n"
+    try:
+        subprocess.run(
+            ["git", "credential", "reject"],
+            input=credential_input,
+            capture_output=True,
+            text=True,
+        )
+        cleared = True
+    except Exception:
+        pass
+
+    return cleared
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  VALIDATION
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -977,15 +1045,67 @@ def deploy(github_url: str = ""):
     # ── git push ──────────────────────────────────────────────────────────────
     result = spin_run(["git", "push", "-u", "origin", branch], "Pushing to GitHub")
     if result.returncode != 0:
-        ui_error(
-            f"git push gagal.\n\n"
-            f"[{C_DIM}]Kemungkinan penyebab:[/]\n"
-            f"- Remote URL salah\n"
-            f"- Belum ada akses ke repo\n"
-            f"- Branch belum ada di remote\n\n"
-            f"[{C_DIM}]{escape((result.stderr or '').strip())}[/]"
-        )
-        sys.exit(1)
+        stderr_txt = (result.stderr or "").strip()
+
+        # ── Cek apakah error karena autentikasi ───────────────────────────────
+        if is_auth_error(stderr_txt):
+            console.print()
+            console.print(Panel(
+                f"[{C_WARN}]Autentikasi GitHub gagal.[/]\n\n"
+                f"[{C_DIM}]Kemungkinan kamu sedang login dengan akun GitHub yang berbeda.\n"
+                f"Credential lama akan dihapus agar kamu bisa login ulang.[/]",
+                title=f"[bold {C_WARN}] AUTH ERROR [/]",
+                title_align="left",
+                border_style=C_WARN,
+                box=SQUARE,
+                padding=(1, 2),
+            ))
+            console.print()
+
+            # Hapus credential GitHub
+            ui_step("Clearing GitHub credentials")
+            cleared = clear_github_credentials()
+            if cleared:
+                console.print(f"  [{C_OK}]✓[/]  Credential dihapus")
+            else:
+                console.print(f"  [{C_WARN}]![/]  Tidak ada credential yang dihapus (mungkin sudah kosong)")
+
+            console.print()
+            console.print(Panel(
+                f"[{C_VAL}]Silakan login dengan akun GitHub yang benar.[/]\n\n"
+                f"[{C_DIM}]Git akan meminta username & password/token saat push berikutnya.\n"
+                f"Gunakan [/][{C_ACCENT}]Personal Access Token[/][{C_DIM}] sebagai password.\n"
+                f"Buat token di: [/][{C_ACCENT}]https://github.com/settings/tokens[/]",
+                title="[bold white] LOGIN ULANG [/]",
+                title_align="left",
+                border_style=C_LINE,
+                box=SQUARE,
+                padding=(1, 2),
+            ))
+            console.print()
+
+            # Retry push sekali — Git akan trigger login prompt
+            result = spin_run(["git", "push", "-u", "origin", branch], "Retrying push")
+            if result.returncode != 0:
+                ui_error(
+                    f"git push tetap gagal setelah login ulang.\n\n"
+                    f"[{C_DIM}]Pastikan:[/]\n"
+                    f"- Token memiliki scope [bold]repo[/bold]\n"
+                    f"- Kamu punya akses write ke repo ini\n\n"
+                    f"[{C_DIM}]{escape((result.stderr or '').strip())}[/]"
+                )
+                sys.exit(1)
+        else:
+            # Error bukan karena auth
+            ui_error(
+                f"git push gagal.\n\n"
+                f"[{C_DIM}]Kemungkinan penyebab:[/]\n"
+                f"- Remote URL salah\n"
+                f"- Belum ada akses ke repo\n"
+                f"- Branch belum ada di remote\n\n"
+                f"[{C_DIM}]{escape(stderr_txt)}[/]"
+            )
+            sys.exit(1)
 
     ui_success(commit_msg, branch, remote)
 
