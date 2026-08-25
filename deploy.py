@@ -56,7 +56,7 @@ from prompt_toolkit.formatted_text import HTML
 # ── Console ───────────────────────────────────────────────────────────────────
 console = Console(highlight=False, soft_wrap=True)
 
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.7.1"
 
 # ── Theme: teal + amber (no purple, no blue) ──────────────────────────────────
 C_HEAD   = "bold turquoise2"
@@ -224,8 +224,13 @@ def run_setup_wizard():
             if key.startswith("sk-or-") and len(key) > 20:
                 break
             ui_warn("API key tidak valid. Harus diawali 'sk-or-'.")
+        config_lines += [
+            f"OPENROUTER_API_KEY={key}",
+            "OPENROUTER_MODEL=google/gemma-4-31b-it:free",
+        ]
+
     # ── API key Groq ──────────────────────────────────────────────────────────
-    if provider == "groq":
+    elif provider == "groq":
         console.print()
         console.print(Panel(
             f"[{C_DIM}]Daftar gratis di [/][{C_ACCENT}]https://console.groq.com/keys[/][{C_DIM}]\n"
