@@ -56,7 +56,7 @@ from prompt_toolkit.formatted_text import HTML
 # ── Console ───────────────────────────────────────────────────────────────────
 console = Console(highlight=False, soft_wrap=True)
 
-APP_VERSION = "1.6.9"
+APP_VERSION = "1.7.0"
 
 # ── Theme: teal + amber (no purple, no blue) ──────────────────────────────────
 C_HEAD   = "bold turquoise2"
@@ -92,9 +92,23 @@ def _parse_env_file(path: Path):
                 os.environ[key.strip()] = value.strip().strip('"').strip("'")
 
 
+def _get_config_path() -> Path:
+    """
+    Lokasi config file:
+    - Windows : C:\\ProgramData\\autodeploy\\config.env
+    - Linux/Mac: ~/.autodeploy.env
+    """
+    if sys.platform == "win32":
+        base = Path(os.environ.get("PROGRAMDATA", "C:\\ProgramData"))
+        config_dir = base / "autodeploy"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        return config_dir / "config.env"
+    return Path.home() / ".autodeploy.env"
+
+
 def load_env():
-    # 1. Home directory config (~/.autodeploy.env) — berlaku global
-    _parse_env_file(Path.home() / ".autodeploy.env")
+    # 1. Config global per platform
+    _parse_env_file(_get_config_path())
     # 2. .env di folder script (untuk development lokal)
     _parse_env_file(Path(__file__).parent / ".env")
     # 3. .env di current working directory — override semua
@@ -104,21 +118,23 @@ def load_env():
 load_env()
 
 # ── Config ────────────────────────────────────────────────────────────────────
-AI_PROVIDER    = os.environ.get("AI_PROVIDER", "openai")
-OPENAI_KEY     = os.environ.get("OPENAI_API_KEY", "")
-GROQ_KEY       = os.environ.get("GROQ_API_KEY", "")
-OLLAMA_URL     = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL   = os.environ.get("OLLAMA_MODEL", "llama3")
-OPENAI_MODEL   = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-GROQ_MODEL     = os.environ.get("GROQ_MODEL", "llama3-8b-8192")
-DEFAULT_BRANCH = os.environ.get("DEFAULT_BRANCH", "main")
+AI_PROVIDER        = os.environ.get("AI_PROVIDER", "openrouter")
+OPENAI_KEY         = os.environ.get("OPENAI_API_KEY", "")
+GROQ_KEY           = os.environ.get("GROQ_API_KEY", "")
+OPENROUTER_KEY     = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_MODEL   = os.environ.get("OPENROUTER_MODEL", "google/gemma-4-31b-it:free")
+OLLAMA_URL         = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_MODEL       = os.environ.get("OLLAMA_MODEL", "llama3")
+OPENAI_MODEL       = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+GROQ_MODEL         = os.environ.get("GROQ_MODEL", "llama3-8b-8192")
+DEFAULT_BRANCH     = os.environ.get("DEFAULT_BRANCH", "main")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  SETUP WIZARD
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-ENV_PATH = Path.home() / ".autodeploy.env"
+ENV_PATH = _get_config_path()
 
 def is_configured() -> bool:
     """Cek apakah sudah ada konfigurasi AI yang valid."""
@@ -128,6 +144,8 @@ def is_configured() -> bool:
     if provider == "groq" and not os.environ.get("GROQ_API_KEY", ""):
         return False
     if provider == "openai" and not os.environ.get("OPENAI_API_KEY", ""):
+        return False
+    if provider == "openrouter" and not os.environ.get("OPENROUTER_API_KEY", ""):
         return False
     # ollama tidak butuh API key
     return True
@@ -142,7 +160,7 @@ def run_setup_wizard():
         f"[{C_VAL}]Selamat datang di AutoDeploy AI![/]\n\n"
         f"[{C_DIM}]Sepertinya ini pertama kali kamu menjalankan [/][{C_ACCENT}]autodeploy[/][{C_DIM}].\n"
         f"Setup ini hanya perlu dilakukan sekali.\n"
-        f"Konfigurasi akan disimpan di [/][{C_ACCENT}]~/.autodeploy.env[/]",
+        f"Konfigurasi akan disimpan di [/][{C_ACCENT}]{_get_config_path()}[/]",
         title="[bold white] ✦  FIRST TIME SETUP [/]",
         title_align="left",
         border_style=C_ACCENT,
@@ -153,35 +171,60 @@ def run_setup_wizard():
 
     # ── Pilih provider ────────────────────────────────────────────────────────
     console.print(f"  [{C_VAL}]Pilih AI provider:[/]\n")
-    console.print(f"  [{C_DIM}]1.[/]  [{C_OK}]Groq[/]      [{C_DIM}]— gratis, cepat  (https://console.groq.com/keys)[/]")
-    console.print(f"  [{C_DIM}]2.[/]  [{C_ACCENT}]Ollama[/]    [{C_DIM}]— lokal, gratis, tidak perlu API key[/]")
-    console.print(f"  [{C_DIM}]3.[/]  [{C_LABEL}]OpenAI[/]    [{C_DIM}]— berbayar       (https://platform.openai.com/api-keys)[/]")
+    console.print(f"  [{C_DIM}]1.[/]  [{C_OK}]OpenRouter[/] [{C_DIM}]— gratis, 20+ model  (https://openrouter.ai)[/]")
+    console.print(f"  [{C_DIM}]2.[/]  [{C_OK}]Groq[/]       [{C_DIM}]— gratis, cepat      (https://console.groq.com/keys)[/]")
+    console.print(f"  [{C_DIM}]3.[/]  [{C_ACCENT}]Ollama[/]     [{C_DIM}]— lokal, offline, tidak perlu API key[/]")
+    console.print(f"  [{C_DIM}]4.[/]  [{C_LABEL}]OpenAI[/]     [{C_DIM}]— berbayar           (https://platform.openai.com/api-keys)[/]")
     console.print()
 
     while True:
         try:
             choice = pt_prompt(
-                HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>Provider (1/2/3)  </ansicyan>'),
+                HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>Provider (1/2/3/4)  </ansicyan>'),
                 style=PT_STYLE,
             ).strip()
         except (KeyboardInterrupt, EOFError):
             raise KeyboardInterrupt
 
         if choice == "1":
-            provider = "groq"
+            provider = "openrouter"
             break
         elif choice == "2":
-            provider = "ollama"
+            provider = "groq"
             break
         elif choice == "3":
+            provider = "ollama"
+            break
+        elif choice == "4":
             provider = "openai"
             break
         else:
-            ui_warn("Masukkan 1, 2, atau 3.")
+            ui_warn("Masukkan 1, 2, 3, atau 4.")
 
     config_lines = [f"AI_PROVIDER={provider}"]
 
-    # ── API key (Groq / OpenAI) ───────────────────────────────────────────────
+    # ── API key OpenRouter ────────────────────────────────────────────────────
+    if provider == "openrouter":
+        console.print()
+        console.print(Panel(
+            f"[{C_DIM}]Daftar gratis di [/][{C_ACCENT}]https://openrouter.ai[/][{C_DIM}]\n"
+            f"Klik [/][{C_ACCENT}]Keys[/][{C_DIM}] → [/][{C_ACCENT}]Create Key[/][{C_DIM}] → paste di bawah.[/]",
+            border_style=C_DIM, box=SQUARE, padding=(0, 2),
+        ))
+        console.print()
+        while True:
+            try:
+                key = pt_prompt(
+                    HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>OpenRouter API Key  </ansicyan>'),
+                    style=PT_STYLE,
+                    placeholder="  sk-or-...",
+                ).strip()
+            except (KeyboardInterrupt, EOFError):
+                raise KeyboardInterrupt
+            if key.startswith("sk-or-") and len(key) > 20:
+                break
+            ui_warn("API key tidak valid. Harus diawali 'sk-or-'.")
+    # ── API key Groq ──────────────────────────────────────────────────────────
     if provider == "groq":
         console.print()
         console.print(Panel(
@@ -253,25 +296,27 @@ def run_setup_wizard():
             f"OLLAMA_MODEL={model}",
         ]
 
-    # ── Simpan ke ~/.autodeploy.env ───────────────────────────────────────────
+    # ── Simpan ke config path ─────────────────────────────────────────────────
     config_lines.append("DEFAULT_BRANCH=main")
     ENV_PATH.write_text("\n".join(config_lines) + "\n", encoding="utf-8")
 
     # ── Reload config ─────────────────────────────────────────────────────────
     _parse_env_file(ENV_PATH)
-    global AI_PROVIDER, OPENAI_KEY, GROQ_KEY, OLLAMA_URL, OLLAMA_MODEL, OPENAI_MODEL, GROQ_MODEL
-    AI_PROVIDER  = os.environ.get("AI_PROVIDER", "openai")
-    OPENAI_KEY   = os.environ.get("OPENAI_API_KEY", "")
-    GROQ_KEY     = os.environ.get("GROQ_API_KEY", "")
-    OLLAMA_URL   = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-    OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:latest")
-    OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-    GROQ_MODEL   = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
+    global AI_PROVIDER, OPENAI_KEY, GROQ_KEY, OPENROUTER_KEY, OPENROUTER_MODEL, OLLAMA_URL, OLLAMA_MODEL, OPENAI_MODEL, GROQ_MODEL
+    AI_PROVIDER      = os.environ.get("AI_PROVIDER", "openrouter")
+    OPENAI_KEY       = os.environ.get("OPENAI_API_KEY", "")
+    GROQ_KEY         = os.environ.get("GROQ_API_KEY", "")
+    OPENROUTER_KEY   = os.environ.get("OPENROUTER_API_KEY", "")
+    OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "google/gemma-4-31b-it:free")
+    OLLAMA_URL       = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+    OLLAMA_MODEL     = os.environ.get("OLLAMA_MODEL", "llama3.2:latest")
+    OPENAI_MODEL     = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+    GROQ_MODEL       = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
 
     console.print()
     console.print(Panel(
         f"[{C_OK}]✓  Setup selesai![/]\n\n"
-        f"[{C_DIM}]Konfigurasi disimpan di [/][{C_ACCENT}]~/.autodeploy.env[/]\n"
+        f"[{C_DIM}]Konfigurasi disimpan di [/][{C_ACCENT}]{_get_config_path()}[/]\n"
         f"[{C_DIM}]Untuk mengubah, edit file tersebut atau jalankan [/][{C_ACCENT}]autodeploy --setup[/]",
         border_style=C_OK, box=SQUARE, padding=(1, 2),
     ))
@@ -290,7 +335,7 @@ def run_uninstall():
 
     console.print(Panel(
         f"[{C_WARN}]Ini akan menghapus:[/]\n\n"
-        f"  [{C_DIM}]•[/]  Config file  [{C_ACCENT}]~/.autodeploy.env[/]\n"
+        f"  [{C_DIM}]•[/]  Config file  [{C_ACCENT}]{_get_config_path()}[/]\n"
         f"  [{C_DIM}]•[/]  Package      [{C_ACCENT}]autodeploy-ai[/]  (pip uninstall)\n\n"
         f"[{C_DIM}]Command [/][{C_ACCENT}]autodeploy[/][{C_DIM}] tidak akan bisa dipakai lagi.[/]",
         title=f"[bold {C_WARN}] ✦  UNINSTALL [/]",
@@ -313,12 +358,21 @@ def run_uninstall():
         console.print(f"\n  [{C_DIM}]Uninstall dibatalkan.[/]\n")
         return
 
-    # Hapus config file
+    # Hapus config file + folder (Windows: C:\ProgramData\autodeploy\)
     if ENV_PATH.exists():
         ENV_PATH.unlink()
         console.print(f"  [{C_OK}]✓[/]  Config dihapus  [{C_DIM}]{ENV_PATH}[/]")
     else:
         console.print(f"  [{C_DIM}]–[/]  Config tidak ditemukan, dilewati")
+
+    # Hapus folder config kalau sudah kosong (khusus Windows ProgramData)
+    config_dir = ENV_PATH.parent
+    if config_dir != Path.home() and config_dir.exists():
+        try:
+            config_dir.rmdir()  # hanya berhasil kalau folder kosong
+            console.print(f"  [{C_OK}]✓[/]  Folder dihapus  [{C_DIM}]{config_dir}[/]")
+        except OSError:
+            console.print(f"  [{C_DIM}]–[/]  Folder tidak kosong, dilewati")
 
     # Scripts dir dan site-packages
     scripts_dir = Path(sys.executable).parent / "Scripts" \
@@ -469,6 +523,8 @@ def _ai_model_label() -> str:
         return OPENAI_MODEL
     if AI_PROVIDER == "groq":
         return GROQ_MODEL
+    if AI_PROVIDER == "openrouter":
+        return OPENROUTER_MODEL
     if AI_PROVIDER == "ollama":
         return OLLAMA_MODEL
     return "unknown"
@@ -659,6 +715,43 @@ def _call_groq(diff: str) -> str:
     return data["choices"][0]["message"]["content"].strip().strip('"')
 
 
+def _call_openrouter(diff: str) -> str:
+    import urllib.request
+    import urllib.error
+
+    payload = json.dumps({
+        "model": OPENROUTER_MODEL,
+        "messages": [{"role": "user", "content": _build_prompt(diff)}],
+        "max_tokens": 100,
+        "temperature": 0.3,
+    }).encode()
+
+    for attempt in range(3):
+        req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {OPENROUTER_KEY}",
+                "HTTP-Referer": "https://github.com/autodeploy-ai",
+                "X-Title": "AutoDeploy CLI",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read())
+            content = data["choices"][0]["message"]["content"].strip().strip('"')
+            # Strip thinking tags jika ada (beberapa model reasoning)
+            if "<think>" in content:
+                content = content.split("</think>")[-1].strip().strip('"')
+            return content
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < 2:
+                time.sleep(5 * (attempt + 1))
+                continue
+            raise
+
+
 def _call_ollama(diff: str) -> str:
     import urllib.request
     payload = json.dumps({
@@ -701,6 +794,10 @@ def generate_commit_message(diff: str) -> str:
             if not GROQ_KEY:
                 raise ValueError("GROQ_API_KEY tidak ada di .env")
             ai_msg = _call_groq(diff)
+        elif AI_PROVIDER == "openrouter":
+            if not OPENROUTER_KEY:
+                raise ValueError("OPENROUTER_API_KEY tidak ada di .env")
+            ai_msg = _call_openrouter(diff)
         elif AI_PROVIDER == "ollama":
             ai_msg = _call_ollama(diff)
         else:
