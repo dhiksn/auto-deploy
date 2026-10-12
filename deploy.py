@@ -56,7 +56,7 @@ from prompt_toolkit.formatted_text import HTML
 # ── Console ───────────────────────────────────────────────────────────────────
 console = Console(highlight=False, soft_wrap=True)
 
-APP_VERSION = "1.7.3"
+APP_VERSION = "1.7.4"
 
 # ── Theme: teal + amber (no purple, no blue) ──────────────────────────────────
 C_HEAD   = "bold turquoise2"
@@ -282,11 +282,25 @@ def run_setup_wizard():
     elif provider == "ollama":
         console.print()
         console.print(Panel(
-            f"[{C_DIM}]Pastikan Ollama sudah running di lokal.\n"
-            f"Download: [/][{C_ACCENT}]https://ollama.com[/]",
+            f"[{C_DIM}]Pastikan Ollama sudah running (lokal atau VPS/container).\n"
+            f"Download: [/][{C_ACCENT}]https://ollama.com[/]\n\n"
+            f"[{C_VAL}]Contoh URL:[/]\n"
+            f"  [{C_DIM}]•[/]  Lokal          [{C_ACCENT}]http://localhost:11434[/]\n"
+            f"  [{C_DIM}]•[/]  VPS            [{C_ACCENT}]http://123.456.789.0:11434[/]\n"
+            f"  [{C_DIM}]•[/]  Docker         [{C_ACCENT}]http://host.docker.internal:11434[/]\n"
+            f"  [{C_DIM}]•[/]  Custom port    [{C_ACCENT}]http://123.456.789.0:10228[/]",
             border_style=C_DIM, box=SQUARE, padding=(0, 2),
         ))
         console.print()
+        try:
+            ollama_url = pt_prompt(
+                HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>Ollama URL  </ansicyan>'),
+                style=PT_STYLE,
+                placeholder="  http://localhost:11434",
+            ).strip()
+        except (KeyboardInterrupt, EOFError):
+            raise KeyboardInterrupt
+        ollama_url = ollama_url or "http://localhost:11434"
         try:
             model = pt_prompt(
                 HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>Model name  </ansicyan>'),
@@ -297,7 +311,7 @@ def run_setup_wizard():
             raise KeyboardInterrupt
         model = model or "llama3.2:latest"
         config_lines += [
-            "OLLAMA_URL=http://localhost:11434",
+            f"OLLAMA_URL={ollama_url}",
             f"OLLAMA_MODEL={model}",
         ]
 
