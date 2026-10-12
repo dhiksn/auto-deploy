@@ -45,7 +45,10 @@ autodeploy https://github.com/username/repo-name
 autodeploy
 ```
 
-Pertama kali menjalankan `autodeploy`, wizard setup akan otomatis muncul untuk mengatur provider AI dan API key. Konfigurasi disimpan di `~/.autodeploy.env` dan berlaku dari folder mana pun.
+Pertama kali menjalankan `autodeploy`, wizard setup akan otomatis muncul untuk mengatur provider AI dan API key. Konfigurasi disimpan di lokasi berikut dan berlaku dari folder mana pun:
+
+- **Windows** → `C:\ProgramData\autodeploy\config.env`
+- **Linux / Mac** → `~/.autodeploy.env`
 
 Untuk mengubah konfigurasi:
 
@@ -80,7 +83,9 @@ Pilih AI provider:
 > Provider (1/2/3/4)
 > OpenRouter API Key   sk-or-...
 
-✓  Setup selesai! Disimpan di ~/.autodeploy.env
+✓  Setup selesai!
+   Konfigurasi disimpan di C:\ProgramData\autodeploy\config.env  ← Windows
+   Konfigurasi disimpan di ~/.autodeploy.env                     ← Linux/Mac
 ```
 
 ---
@@ -111,7 +116,10 @@ Kalau project belum ada `.git`, sebelum flow di atas akan otomatis:
 | `ollama` | `llama3.2:latest` | Lokal, gratis, butuh Ollama running | Tidak perlu |
 | `openai` | `gpt-4o-mini` | Online, berbayar | [platform.openai.com](https://platform.openai.com/api-keys) |
 
-Model bisa diganti manual di `~/.autodeploy.env`:
+Model bisa diganti manual di file config:
+
+- **Windows** → `C:\ProgramData\autodeploy\config.env`
+- **Linux / Mac** → `~/.autodeploy.env`
 
 ```env
 AI_PROVIDER=openrouter
@@ -142,7 +150,9 @@ Kalau `git push` gagal karena akun GitHub yang aktif berbeda dengan pemilik repo
 
 ## Konfigurasi Lengkap
 
-Semua konfigurasi disimpan di `~/.autodeploy.env`:
+Semua konfigurasi disimpan di:
+- **Windows** → `C:\ProgramData\autodeploy\config.env`
+- **Linux / Mac** → `~/.autodeploy.env`
 
 ```env
 # Provider: openrouter | groq | ollama | openai
@@ -157,6 +167,7 @@ GROQ_MODEL=llama-3.3-70b-versatile
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o-mini
 
+# Ollama — bisa lokal atau VPS
 OLLAMA_URL=http://localhost:11434
 OLLAMA_MODEL=llama3.2:latest
 
