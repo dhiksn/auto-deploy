@@ -56,7 +56,7 @@ from prompt_toolkit.formatted_text import HTML
 # ── Console ───────────────────────────────────────────────────────────────────
 console = Console(highlight=False, soft_wrap=True)
 
-APP_VERSION = "1.7.5"
+APP_VERSION = "1.7.6"
 
 # ── Theme: teal + amber (no purple, no blue) ──────────────────────────────────
 C_HEAD   = "bold turquoise2"
@@ -670,7 +670,8 @@ def git_remote_url() -> str:
 def git_diff_staged() -> str:
     stat = (run(["git", "diff", "--staged", "--stat"], capture=True).stdout or "").strip()
     diff = (run(["git", "diff", "--staged", "--unified=3"], capture=True).stdout or "").strip()
-    MAX = 3500
+    # Ollama (lokal/VPS) pakai limit lebih kecil supaya tidak timeout
+    MAX = 1500 if AI_PROVIDER == "ollama" else 3500
     if len(diff) > MAX:
         diff = diff[:MAX] + "\n...(truncated)"
     return f"{stat}\n\n{diff}".strip()
