@@ -56,7 +56,7 @@ from prompt_toolkit.formatted_text import HTML
 # ── Console ───────────────────────────────────────────────────────────────────
 console = Console(highlight=False, soft_wrap=True)
 
-APP_VERSION = "1.7.6"
+APP_VERSION = "1.7.7"
 
 # ── Theme: teal + amber (no purple, no blue) ──────────────────────────────────
 C_HEAD   = "bold turquoise2"
@@ -774,19 +774,43 @@ def _call_openrouter(diff: str) -> str:
 
 def _call_ollama(diff: str) -> str:
     import urllib.request
+    import threading
+
     payload = json.dumps({
         "model": OLLAMA_MODEL,
         "prompt": _build_prompt(diff),
         "stream": False,
     }).encode()
+
     req = urllib.request.Request(
         f"{OLLAMA_URL}/api/generate",
         data=payload,
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=180) as resp:
-        data = json.loads(resp.read())
-    return data.get("response", "").strip().strip('"')
+
+    result_box: list = []
+    error_box:  list = []
+
+    def _do_request():
+        try:
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                result_box.append(json.loads(resp.read()))
+        except Exception as e:
+            error_box.append(e)
+
+    t = threading.Thread(target=_do_request, daemon=True)
+    t.start()
+
+    # Tunggu sambil tetap bisa di-interrupt Ctrl+C
+    while t.is_alive():
+        t.join(timeout=0.2)
+
+    if error_box:
+        raise error_box[0]
+    if not result_box:
+        raise RuntimeError("Ollama tidak merespons")
+
+    return result_box[0].get("response", "").strip().strip('"')
 
 
 def generate_commit_message(diff: str) -> str:
