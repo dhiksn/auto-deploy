@@ -56,7 +56,7 @@ from prompt_toolkit.formatted_text import HTML
 # ── Console ───────────────────────────────────────────────────────────────────
 console = Console(highlight=False, soft_wrap=True)
 
-APP_VERSION = "1.7.8"
+APP_VERSION = "1.7.9"
 
 # ── Theme: teal + amber (no purple, no blue) ──────────────────────────────────
 C_HEAD   = "bold turquoise2"
@@ -275,10 +275,27 @@ def run_setup_wizard():
             if len(cf_token) > 20:
                 break
             ui_warn("API Token tidak valid.")
+        console.print()
+        console.print(Panel(
+            f"[{C_DIM}]Model default: [/][{C_ACCENT}]@cf/meta/llama-4-scout-17b-16e-instruct[/]\n"
+            f"[{C_DIM}]Model lain tersedia di [/][{C_ACCENT}]https://developers.cloudflare.com/workers-ai/models/[/]\n"
+            f"[{C_DIM}]Tekan Enter untuk pakai default.[/]",
+            border_style=C_DIM, box=SQUARE, padding=(0, 2),
+        ))
+        console.print()
+        try:
+            cf_model = pt_prompt(
+                HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>Model  </ansicyan>'),
+                style=PT_STYLE,
+                placeholder="  @cf/meta/llama-4-scout-17b-16e-instruct",
+            ).strip()
+        except (KeyboardInterrupt, EOFError):
+            raise KeyboardInterrupt
+        cf_model = cf_model or "@cf/meta/llama-4-scout-17b-16e-instruct"
         config_lines += [
             f"CLOUDFLARE_ACCOUNT_ID={account_id}",
             f"CLOUDFLARE_API_TOKEN={cf_token}",
-            "CLOUDFLARE_MODEL=@cf/meta/llama-4-scout-17b-16e-instruct",
+            f"CLOUDFLARE_MODEL={cf_model}",
         ]
 
     # ── API key Groq ──────────────────────────────────────────────────────────
