@@ -56,7 +56,7 @@ from prompt_toolkit.formatted_text import HTML
 # ── Console ───────────────────────────────────────────────────────────────────
 console = Console(highlight=False, soft_wrap=True)
 
-APP_VERSION = "1.7.7"
+APP_VERSION = "1.7.8"
 
 # ── Theme: teal + amber (no purple, no blue) ──────────────────────────────────
 C_HEAD   = "bold turquoise2"
@@ -120,14 +120,17 @@ load_env()
 # ── Config ────────────────────────────────────────────────────────────────────
 AI_PROVIDER        = os.environ.get("AI_PROVIDER", "openrouter")
 OPENAI_KEY         = os.environ.get("OPENAI_API_KEY", "")
-GROQ_KEY           = os.environ.get("GROQ_API_KEY", "")
-OPENROUTER_KEY     = os.environ.get("OPENROUTER_API_KEY", "")
-OPENROUTER_MODEL   = os.environ.get("OPENROUTER_MODEL", "google/gemma-4-31b-it:free")
-OLLAMA_URL         = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL       = os.environ.get("OLLAMA_MODEL", "llama3")
-OPENAI_MODEL       = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-GROQ_MODEL         = os.environ.get("GROQ_MODEL", "llama3-8b-8192")
-DEFAULT_BRANCH     = os.environ.get("DEFAULT_BRANCH", "main")
+GROQ_KEY              = os.environ.get("GROQ_API_KEY", "")
+OPENROUTER_KEY        = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_MODEL      = os.environ.get("OPENROUTER_MODEL", "google/gemma-4-31b-it:free")
+CLOUDFLARE_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "")
+CLOUDFLARE_API_TOKEN  = os.environ.get("CLOUDFLARE_API_TOKEN", "")
+CLOUDFLARE_MODEL      = os.environ.get("CLOUDFLARE_MODEL", "@cf/meta/llama-4-scout-17b-16e-instruct")
+OLLAMA_URL            = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_MODEL          = os.environ.get("OLLAMA_MODEL", "llama3")
+OPENAI_MODEL          = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+GROQ_MODEL            = os.environ.get("GROQ_MODEL", "llama3-8b-8192")
+DEFAULT_BRANCH        = os.environ.get("DEFAULT_BRANCH", "main")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -146,6 +149,11 @@ def is_configured() -> bool:
     if provider == "openai" and not os.environ.get("OPENAI_API_KEY", ""):
         return False
     if provider == "openrouter" and not os.environ.get("OPENROUTER_API_KEY", ""):
+        return False
+    if provider == "cloudflare" and (
+        not os.environ.get("CLOUDFLARE_ACCOUNT_ID", "") or
+        not os.environ.get("CLOUDFLARE_API_TOKEN", "")
+    ):
         return False
     # ollama tidak butuh API key
     return True
@@ -172,15 +180,16 @@ def run_setup_wizard():
     # ── Pilih provider ────────────────────────────────────────────────────────
     console.print(f"  [{C_VAL}]Pilih AI provider:[/]\n")
     console.print(f"  [{C_DIM}]1.[/]  [{C_OK}]OpenRouter[/] [{C_DIM}]— gratis, 20+ model  (https://openrouter.ai)[/]")
-    console.print(f"  [{C_DIM}]2.[/]  [{C_OK}]Groq[/]       [{C_DIM}]— gratis, cepat      (https://console.groq.com/keys)[/]")
-    console.print(f"  [{C_DIM}]3.[/]  [{C_ACCENT}]Ollama[/]     [{C_DIM}]— lokal, offline, tidak perlu API key[/]")
-    console.print(f"  [{C_DIM}]4.[/]  [{C_LABEL}]OpenAI[/]     [{C_DIM}]— berbayar           (https://platform.openai.com/api-keys)[/]")
+    console.print(f"  [{C_DIM}]2.[/]  [{C_OK}]Cloudflare[/] [{C_DIM}]— gratis, Workers AI (https://dash.cloudflare.com)[/]")
+    console.print(f"  [{C_DIM}]3.[/]  [{C_OK}]Groq[/]       [{C_DIM}]— gratis, cepat      (https://console.groq.com/keys)[/]")
+    console.print(f"  [{C_DIM}]4.[/]  [{C_ACCENT}]Ollama[/]     [{C_DIM}]— lokal, offline, tidak perlu API key[/]")
+    console.print(f"  [{C_DIM}]5.[/]  [{C_LABEL}]OpenAI[/]     [{C_DIM}]— berbayar           (https://platform.openai.com/api-keys)[/]")
     console.print()
 
     while True:
         try:
             choice = pt_prompt(
-                HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>Provider (1/2/3/4)  </ansicyan>'),
+                HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>Provider (1/2/3/4/5)  </ansicyan>'),
                 style=PT_STYLE,
             ).strip()
         except (KeyboardInterrupt, EOFError):
@@ -190,16 +199,19 @@ def run_setup_wizard():
             provider = "openrouter"
             break
         elif choice == "2":
-            provider = "groq"
+            provider = "cloudflare"
             break
         elif choice == "3":
-            provider = "ollama"
+            provider = "groq"
             break
         elif choice == "4":
+            provider = "ollama"
+            break
+        elif choice == "5":
             provider = "openai"
             break
         else:
-            ui_warn("Masukkan 1, 2, 3, atau 4.")
+            ui_warn("Masukkan 1, 2, 3, 4, atau 5.")
 
     config_lines = [f"AI_PROVIDER={provider}"]
 
@@ -227,6 +239,46 @@ def run_setup_wizard():
         config_lines += [
             f"OPENROUTER_API_KEY={key}",
             "OPENROUTER_MODEL=google/gemma-4-31b-it:free",
+        ]
+
+    # ── API key Cloudflare ────────────────────────────────────────────────────
+    elif provider == "cloudflare":
+        console.print()
+        console.print(Panel(
+            f"[{C_DIM}]Daftar gratis di [/][{C_ACCENT}]https://dash.cloudflare.com[/][{C_DIM}]\n"
+            f"Account ID ada di sidebar kanan dashboard.\n"
+            f"API Token: Profile → API Tokens → Create Token → Workers AI template.[/]",
+            border_style=C_DIM, box=SQUARE, padding=(0, 2),
+        ))
+        console.print()
+        while True:
+            try:
+                account_id = pt_prompt(
+                    HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>Account ID  </ansicyan>'),
+                    style=PT_STYLE,
+                    placeholder="  01b402d8ebd6d105b6dd06a792a704b7",
+                ).strip()
+            except (KeyboardInterrupt, EOFError):
+                raise KeyboardInterrupt
+            if len(account_id) >= 32:
+                break
+            ui_warn("Account ID tidak valid.")
+        while True:
+            try:
+                cf_token = pt_prompt(
+                    HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>API Token  </ansicyan>'),
+                    style=PT_STYLE,
+                    placeholder="  cfut_...",
+                ).strip()
+            except (KeyboardInterrupt, EOFError):
+                raise KeyboardInterrupt
+            if len(cf_token) > 20:
+                break
+            ui_warn("API Token tidak valid.")
+        config_lines += [
+            f"CLOUDFLARE_ACCOUNT_ID={account_id}",
+            f"CLOUDFLARE_API_TOKEN={cf_token}",
+            "CLOUDFLARE_MODEL=@cf/meta/llama-4-scout-17b-16e-instruct",
         ]
 
     # ── API key Groq ──────────────────────────────────────────────────────────
@@ -321,16 +373,19 @@ def run_setup_wizard():
 
     # ── Reload config ─────────────────────────────────────────────────────────
     _parse_env_file(ENV_PATH)
-    global AI_PROVIDER, OPENAI_KEY, GROQ_KEY, OPENROUTER_KEY, OPENROUTER_MODEL, OLLAMA_URL, OLLAMA_MODEL, OPENAI_MODEL, GROQ_MODEL
-    AI_PROVIDER      = os.environ.get("AI_PROVIDER", "openrouter")
-    OPENAI_KEY       = os.environ.get("OPENAI_API_KEY", "")
-    GROQ_KEY         = os.environ.get("GROQ_API_KEY", "")
-    OPENROUTER_KEY   = os.environ.get("OPENROUTER_API_KEY", "")
-    OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "google/gemma-4-31b-it:free")
-    OLLAMA_URL       = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-    OLLAMA_MODEL     = os.environ.get("OLLAMA_MODEL", "llama3.2:latest")
-    OPENAI_MODEL     = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-    GROQ_MODEL       = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
+    global AI_PROVIDER, OPENAI_KEY, GROQ_KEY, OPENROUTER_KEY, OPENROUTER_MODEL, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, CLOUDFLARE_MODEL, OLLAMA_URL, OLLAMA_MODEL, OPENAI_MODEL, GROQ_MODEL
+    AI_PROVIDER           = os.environ.get("AI_PROVIDER", "openrouter")
+    OPENAI_KEY            = os.environ.get("OPENAI_API_KEY", "")
+    GROQ_KEY              = os.environ.get("GROQ_API_KEY", "")
+    OPENROUTER_KEY        = os.environ.get("OPENROUTER_API_KEY", "")
+    OPENROUTER_MODEL      = os.environ.get("OPENROUTER_MODEL", "google/gemma-4-31b-it:free")
+    CLOUDFLARE_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "")
+    CLOUDFLARE_API_TOKEN  = os.environ.get("CLOUDFLARE_API_TOKEN", "")
+    CLOUDFLARE_MODEL      = os.environ.get("CLOUDFLARE_MODEL", "@cf/meta/llama-4-scout-17b-16e-instruct")
+    OLLAMA_URL            = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+    OLLAMA_MODEL          = os.environ.get("OLLAMA_MODEL", "llama3.2:latest")
+    OPENAI_MODEL          = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+    GROQ_MODEL            = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
 
     console.print()
     console.print(Panel(
@@ -544,6 +599,8 @@ def _ai_model_label() -> str:
         return GROQ_MODEL
     if AI_PROVIDER == "openrouter":
         return OPENROUTER_MODEL
+    if AI_PROVIDER == "cloudflare":
+        return CLOUDFLARE_MODEL.split("/")[-1]
     if AI_PROVIDER == "ollama":
         return OLLAMA_MODEL
     return "unknown"
@@ -772,6 +829,26 @@ def _call_openrouter(diff: str) -> str:
             raise
 
 
+def _call_cloudflare(diff: str) -> str:
+    import urllib.request
+    payload = json.dumps({
+        "messages": [{"role": "user", "content": _build_prompt(diff)}],
+        "max_tokens": 100,
+        "temperature": 0.3,
+    }).encode()
+    req = urllib.request.Request(
+        f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/{CLOUDFLARE_MODEL}",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.loads(resp.read())
+    return data["result"]["response"].strip().strip('"').strip("`")
+
+
 def _call_ollama(diff: str) -> str:
     import urllib.request
     import threading
@@ -842,6 +919,10 @@ def generate_commit_message(diff: str) -> str:
             if not OPENROUTER_KEY:
                 raise ValueError("OPENROUTER_API_KEY tidak ada di .env")
             ai_msg = _call_openrouter(diff)
+        elif AI_PROVIDER == "cloudflare":
+            if not CLOUDFLARE_ACCOUNT_ID or not CLOUDFLARE_API_TOKEN:
+                raise ValueError("CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN tidak ada di .env")
+            ai_msg = _call_cloudflare(diff)
         elif AI_PROVIDER == "ollama":
             ai_msg = _call_ollama(diff)
         else:
