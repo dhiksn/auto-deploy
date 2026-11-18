@@ -56,7 +56,7 @@ from prompt_toolkit.formatted_text import HTML
 # ── Console ───────────────────────────────────────────────────────────────────
 console = Console(highlight=False)
 
-APP_VERSION = "1.8.5"
+APP_VERSION = "1.8.6"
 
 # ── Theme: teal → emerald → lime, amber untuk warning (no purple, no blue) ────
 C_ACCENT = "#2dd4bf"   # teal-400
@@ -1348,6 +1348,8 @@ def deploy(github_url: str = ""):
             # (interactive: tanpa spinner supaya prompt login tidak tertimpa)
             result = spin_run(["git", "push", "-u", "origin", branch], "Retrying push",
                               detail=f"origin/{branch}", interactive=True)
+            ui_clear()
+            ui_banner()
             if result.returncode != 0:
                 ui_error(
                     "git push tetap gagal setelah login ulang.",
