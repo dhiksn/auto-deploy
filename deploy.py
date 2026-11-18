@@ -56,7 +56,7 @@ from prompt_toolkit.formatted_text import HTML
 # ── Console ───────────────────────────────────────────────────────────────────
 console = Console(highlight=False)
 
-APP_VERSION = "1.8.4"
+APP_VERSION = "1.8.5"
 
 # ── Theme: teal → emerald → lime, amber untuk warning (no purple, no blue) ────
 C_ACCENT = "#2dd4bf"   # teal-400
@@ -1559,8 +1559,106 @@ def run_switch_provider():
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  HELP
+#  UPDATE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def _fetch_latest_version() -> str:
+    """Ambil versi terbaru autodeploy-ai dari PyPI. Return string versi atau ''."""
+    import urllib.request
+    import urllib.error
+    try:
+        req = urllib.request.Request(
+            "https://pypi.org/pypi/autodeploy-ai/json",
+            headers={"User-Agent": "AutoDeploy-CLI"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+        return data["info"]["version"]
+    except Exception:
+        return ""
+
+
+def _version_tuple(v: str) -> tuple:
+    try:
+        return tuple(int(x) for x in v.strip().split("."))
+    except Exception:
+        return (0,)
+
+
+def run_update():
+    """Periksa versi terbaru di PyPI, tawarkan update jika ada."""
+    ui_clear()
+    ui_banner()
+
+    t0 = time.perf_counter()
+    with working("Memeriksa versi terbaru"):
+        latest = _fetch_latest_version()
+
+    if not latest:
+        ui_done("Periksa versi", ok=False, elapsed=time.perf_counter() - t0)
+        ui_error(
+            "Tidak bisa terhubung ke PyPI.",
+            hints=["Periksa koneksi internet", "Coba lagi beberapa saat"],
+        )
+        sys.exit(1)
+
+    ui_done("Periksa versi", elapsed=time.perf_counter() - t0)
+    console.print()
+
+    current = APP_VERSION
+    is_outdated = _version_tuple(latest) > _version_tuple(current)
+
+    if not is_outdated:
+        console.print(card(
+            kv([
+                ("Terpasang", Text(current, style=f"bold {C_OK}")),
+                ("Terbaru",   Text(latest,  style=C_DIM)),
+            ]),
+            "Sudah versi terbaru ✓", tone="ok",
+        ))
+        console.print()
+        return
+
+    console.print(card(
+        kv([
+            ("Terpasang", Text(current, style=f"bold {C_WARN}")),
+            ("Terbaru",   Text(latest,  style=f"bold {C_OK}")),
+        ]),
+        "Update tersedia", tone="warn",
+    ))
+    console.print()
+
+    confirm = ask(f"Install v{latest} sekarang? (Y/n)").lower()
+    if confirm in ("n", "no"):
+        ui_cancel("Update dibatalkan.")
+        return
+
+    console.print()
+    t0 = time.perf_counter()
+    with working(f"Menginstall autodeploy-ai v{latest}"):
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--upgrade", "autodeploy-ai", "-q"],
+            capture_output=True, text=True,
+        )
+    ui_done(f"Install v{latest}", ok=result.returncode == 0, elapsed=time.perf_counter() - t0)
+
+    if result.returncode != 0:
+        ui_error("Install gagal.", detail=(result.stderr or "").strip())
+        sys.exit(1)
+
+    console.print()
+    console.print(card(
+        Text.from_markup(
+            f"[bold {C_OK}]✓  Update selesai![/]\n\n"
+            f"[{C_LABEL}]autodeploy-ai [/][bold {C_TEXT}]v{current}[/]"
+            f"[{C_LABEL}]  →  [/][bold {C_OK}]v{latest}[/]"
+        ),
+        "Done", tone="ok",
+    ))
+    console.print()
+
+
+
 
 def run_help():
     ui_clear()
@@ -1572,6 +1670,7 @@ def run_help():
         ("autodeploy --history",         "Tampilkan 10 commit terakhir"),
         ("autodeploy --history <n>",     "Tampilkan n commit terakhir"),
         ("autodeploy --switch-provider", "Ganti AI provider tanpa setup ulang"),
+        ("autodeploy --update",          "Periksa dan install versi terbaru"),
         ("autodeploy --setup",           "Jalankan setup wizard dari awal"),
         ("autodeploy --uninstall",       "Hapus konfigurasi dan uninstall package"),
         ("autodeploy -h",                "Tampilkan halaman bantuan ini"),
@@ -1626,6 +1725,13 @@ def main_cli():
             run_switch_provider()
         except KeyboardInterrupt:
             ui_cancel("Switch provider dibatalkan")
+        sys.exit(0)
+
+    if "--update" in args or "--upgrade" in args:
+        try:
+            run_update()
+        except KeyboardInterrupt:
+            ui_cancel("Update dibatalkan")
         sys.exit(0)
 
     # Flag --setup → paksa jalankan wizard ulang
