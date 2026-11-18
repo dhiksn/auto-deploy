@@ -56,7 +56,7 @@ from prompt_toolkit.formatted_text import HTML
 # ── Console ───────────────────────────────────────────────────────────────────
 console = Console(highlight=False)
 
-APP_VERSION = "1.8.6"
+APP_VERSION = "1.8.7"
 
 # ── Theme: teal → emerald → lime, amber untuk warning (no purple, no blue) ────
 C_ACCENT = "#2dd4bf"   # teal-400
@@ -792,6 +792,15 @@ def git_has_changes() -> bool:
     return bool((run(["git", "status", "--porcelain"], capture=True).stdout or "").strip())
 
 
+def git_has_unpushed_commits() -> bool:
+    """Return True kalau ada commit lokal yang belum di-push ke remote."""
+    result = run(["git", "log", "@{u}..", "--oneline"], capture=True)
+    # Kalau tidak ada upstream (repo baru), anggap ada yang perlu di-push
+    if result.returncode != 0:
+        return True
+    return bool((result.stdout or "").strip())
+
+
 def git_current_branch() -> str:
     # symbolic-ref tetap bekerja di repo baru yang belum punya commit
     # (rev-parse --abbrev-ref mengembalikan "HEAD" di kondisi itu)
@@ -1276,13 +1285,51 @@ def deploy(github_url: str = ""):
     _TIMINGS.clear()
 
     # ── Cek perubahan ─────────────────────────────────────────────────────────
-    if not git_has_changes():
+    has_changes  = git_has_changes()
+    has_unpushed = git_has_unpushed_commits()
+
+    if not has_changes and not has_unpushed:
         console.print(card(
             Text("Semua file sudah up to date. Tidak ada yang perlu di-commit.", style=C_LABEL),
             "No changes", tone="warn",
         ))
         console.print()
         ui_wait("Press Enter to exit...")
+        sys.exit(0)
+
+    # ── Kalau ada unpushed commits tapi working tree bersih — langsung push ──
+    if not has_changes and has_unpushed:
+        sha = (run(["git", "rev-parse", "--short", "HEAD"], capture=True).stdout or "").strip()
+        commit_msg = (run(["git", "log", "-1", "--pretty=%s"], capture=True).stdout or "").strip()
+        result = spin_run(["git", "push", "-u", "origin", branch], "Pushing to GitHub",
+                          detail=f"origin/{branch}")
+        if result.returncode != 0:
+            stderr_txt = (result.stderr or "").strip()
+            if is_auth_error(stderr_txt):
+                console.print()
+                console.print(card(
+                    Text.from_markup(
+                        f"[bold {C_WARN}]Autentikasi GitHub gagal.[/]\n\n"
+                        f"[{C_LABEL}]Credential lama akan dihapus agar kamu bisa login ulang.[/]"
+                    ),
+                    "Auth error", tone="warn",
+                ))
+                console.print()
+                ui_step("Clearing GitHub credentials")
+                cleared = clear_github_credentials()
+                console.print(f"  [{C_OK}]✓[/]  Credential dihapus" if cleared else f"  [{C_WARN}]▲[/]  Tidak ada credential yang dihapus")
+                console.print()
+                result = spin_run(["git", "push", "-u", "origin", branch], "Retrying push",
+                                  detail=f"origin/{branch}", interactive=True)
+                ui_clear()
+                ui_banner()
+                if result.returncode != 0:
+                    ui_error("git push tetap gagal.", detail=(result.stderr or "").strip())
+                    sys.exit(1)
+            else:
+                ui_error("git push gagal.", detail=stderr_txt)
+                sys.exit(1)
+        ui_success(commit_msg, branch, remote, sha=sha, elapsed=sum(_TIMINGS))
         sys.exit(0)
 
     # ── git add . ─────────────────────────────────────────────────────────────
