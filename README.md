@@ -10,6 +10,9 @@ AutoDeploy AI adalah CLI yang mengotomatisasi proses deploy project ke GitHub:
 **Tampilan Awal**
 ![Setup deploy](https://raw.githubusercontent.com/dhiksn/auto-deploy/main/Tawal.png)
 
+**Hasil Deploy**
+![Deploy complete](https://raw.githubusercontent.com/dhiksn/auto-deploy/main/Takhir.png)
+
 ---
 
 ## Fitur
@@ -18,7 +21,7 @@ AutoDeploy AI adalah CLI yang mengotomatisasi proses deploy project ke GitHub:
 - **Set remote otomatis** dari GitHub URL yang lo kasih
 - **Validasi repo** — cek apakah repo GitHub benar-benar ada sebelum deploy
 - **AI generate commit message** pakai OpenRouter, Groq, OpenAI, atau Ollama
-- **Spinner animasi** di tiap step — staging, generating, commit, push
+- **Tampilan terminal modern** — kartu rounded, header gradient, badge tipe commit berwarna, spinner + durasi tiap step, link repo yang bisa diklik
 - **Setup wizard** — pertama kali jalan langsung guided setup, tidak perlu config manual
 - **Global CLI** — bisa dipanggil dari folder project mana pun
 - **Auto clear credential** — kalau push gagal karena akun GitHub beda, credential lama otomatis dihapus dan Git akan minta login ulang
@@ -75,13 +78,14 @@ Saat pertama kali jalan, wizard akan memandu memilih provider AI dan memasukkan 
 ✦  FIRST TIME SETUP
 
 Pilih AI provider:
-  1.  OpenRouter — gratis, 20+ model
-  2.  Groq       — gratis, cepat
-  3.  Ollama     — lokal, offline, tidak perlu API key
-  4.  OpenAI     — berbayar
+  1  OpenRouter   FREE   20+ model gratis
+  2  Cloudflare   FREE   Workers AI
+  3  Groq         FREE   gratis, sangat cepat
+  4  Ollama       LOCAL  offline, tanpa API key
+  5  OpenAI       PAID   berbayar
 
-> Provider (1/2/3/4)
-> OpenRouter API Key   sk-or-...
+❯ Provider (1/2/3/4/5)
+❯ OpenRouter API Key   sk-or-...
 
 ✓  Setup selesai!
    Konfigurasi disimpan di C:\ProgramData\autodeploy\config.env  ← Windows
@@ -94,7 +98,7 @@ Pilih AI provider:
 
 ```
   ✓  Staging changes            → git add .
-  ✓  Generating commit message  → AI generate via OpenRouter / Groq / OpenAI / Ollama
+  ✓  Generating commit message  → AI generate via OpenRouter / Cloudflare / Groq / OpenAI / Ollama
                                    └─ konfirmasi atau ketik manual
   ✓  Creating commit            → git commit -m "<pesan>"
   ✓  Pushing to GitHub          → git push -u origin <branch>

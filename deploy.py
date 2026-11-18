@@ -1,23 +1,21 @@
 #!/usr/bin/env python3
 """
-┌────────────────────────────────────────────────┐
-│              AutoDeploy CLI                    │
-│     Git Init · AI Commit · Auto Push           │
-│                                                │
-│  Requires:                                     │
-│    pip install rich prompt_toolkit             │
-└────────────────────────────────────────────────┘
+AutoDeploy AI  ·  Git Init · AI Commit · Auto Push
 
+Requires:  pip install rich prompt_toolkit
 """
 
 # ── Standard library ──────────────────────────────────────────────────────────
 import os
+import re
 import sys
 import json
 import subprocess
 import time
 import threading
+from contextlib import contextmanager
 from pathlib import Path
+from xml.sax.saxutils import escape as _xml_escape
 
 # Fix UnicodeEncodeError di Windows terminal
 if sys.platform == "win32":
@@ -41,43 +39,47 @@ def _ensure(pkg: str, import_as: str | None = None):
 _ensure("rich")
 _ensure("prompt_toolkit", "prompt_toolkit")
 
-from rich.console import Console
+from rich import box
+from rich.console import Console, Group
+from rich.live import Live
+from rich.markup import escape
+from rich.padding import Padding
 from rich.panel import Panel
+from rich.spinner import Spinner
+from rich.style import Style
 from rich.table import Table
 from rich.text import Text
-from rich.align import Align
-from rich.box import DOUBLE_EDGE, SQUARE, MINIMAL
-from rich.progress import Progress, BarColumn, TextColumn
-from rich.markup import escape
 from prompt_toolkit import prompt as pt_prompt
 from prompt_toolkit.styles import Style as PTStyle
 from prompt_toolkit.formatted_text import HTML
 
 # ── Console ───────────────────────────────────────────────────────────────────
-console = Console(highlight=False, soft_wrap=True)
+console = Console(highlight=False)
 
-APP_VERSION = "1.7.9"
+APP_VERSION = "1.8.0"
 
-# ── Theme: teal + amber (no purple, no blue) ──────────────────────────────────
-C_HEAD   = "bold turquoise2"
-C_LINE   = "grey42"
-C_LABEL  = "grey62"
-C_VAL    = "wheat1"
-C_OK     = "sea_green2"
-C_WARN   = "dark_orange"
-C_ERR    = "bright_red"
-C_DIM    = "grey35"
-C_TEXT   = "white"
-C_ACCENT = "turquoise2"
-C_DIM_ANSI = "2"   # ANSI dim untuk sys.stdout.write
+# ── Theme: teal → emerald → lime, amber untuk warning (no purple, no blue) ────
+C_ACCENT = "#2dd4bf"   # teal-400
+C_HEAD   = f"bold {C_ACCENT}"
+C_TEXT   = "#f3f4f6"   # gray-100
+C_VAL    = "#e5e7eb"   # gray-200
+C_LABEL  = "#9ca3af"   # gray-400
+C_DIM    = "#6b7280"   # gray-500
+C_LINE   = "#4b5563"   # gray-600
+C_OK     = "#34d399"   # emerald-400
+C_WARN   = "#fbbf24"   # amber-400
+C_ERR    = "#f87171"   # red-400
+C_CHIP   = "#1f2937"   # gray-800 — latar chip / keycap
+C_INK    = "#0b0f14"   # teks gelap di atas badge berwarna
+
+BRAND_GRADIENT = ("#5eead4", "#2dd4bf", "#34d399", "#a3e635")
 
 PT_STYLE = PTStyle.from_dict({
-    "prompt":      "bold ansigreen",
-    "placeholder": "ansibrightblack",
-    "": "ansiwhite",
+    "arrow":       f"{C_ACCENT} bold",
+    "label":       C_TEXT,
+    "placeholder": C_DIM,
+    "":            C_TEXT,
 })
-
-LOGO = "Slant"  # pyfiglet font
 
 # ── Load .env ─────────────────────────────────────────────────────────────────
 def _parse_env_file(path: Path):
@@ -159,80 +161,68 @@ def is_configured() -> bool:
     return True
 
 
+PROVIDERS = [
+    # id,          nama,         tier,    keterangan,               situs
+    ("openrouter", "OpenRouter", "FREE",  "20+ model gratis",       "openrouter.ai"),
+    ("cloudflare", "Cloudflare", "FREE",  "Workers AI",             "dash.cloudflare.com"),
+    ("groq",       "Groq",       "FREE",  "gratis, sangat cepat",   "console.groq.com/keys"),
+    ("ollama",     "Ollama",     "LOCAL", "offline, tanpa API key", "ollama.com"),
+    ("openai",     "OpenAI",     "PAID",  "berbayar",               "platform.openai.com/api-keys"),
+]
+_TIER_COLORS = {"FREE": C_OK, "LOCAL": C_ACCENT, "PAID": C_WARN}
+
+
+def _provider_table() -> Table:
+    t = Table.grid(padding=(0, 2))
+    t.add_column(justify="right", style=C_DIM, no_wrap=True)
+    t.add_column(no_wrap=True)
+    t.add_column(no_wrap=True)
+    t.add_column(style=C_LABEL, no_wrap=True)
+    t.add_column(style=C_DIM, overflow="fold")
+    for i, (_, name, tier, note, site) in enumerate(PROVIDERS, 1):
+        t.add_row(str(i), Text(name, style=f"bold {C_TEXT}"), badge(tier, _TIER_COLORS[tier]), note, site)
+    return t
+
+
 def run_setup_wizard():
     """Setup wizard interaktif untuk konfigurasi pertama kali."""
     ui_clear()
     ui_banner()
 
-    console.print(Panel(
-        f"[{C_VAL}]Selamat datang di AutoDeploy AI![/]\n\n"
-        f"[{C_DIM}]Sepertinya ini pertama kali kamu menjalankan [/][{C_ACCENT}]autodeploy[/][{C_DIM}].\n"
-        f"Setup ini hanya perlu dilakukan sekali.\n"
-        f"Konfigurasi akan disimpan di [/][{C_ACCENT}]{_get_config_path()}[/]",
-        title="[bold white] ✦  FIRST TIME SETUP [/]",
-        title_align="left",
-        border_style=C_ACCENT,
-        box=SQUARE,
-        padding=(1, 2),
+    console.print(card(
+        Text.from_markup(
+            f"[bold {C_TEXT}]Selamat datang di AutoDeploy AI![/]\n\n"
+            f"[{C_LABEL}]Sepertinya ini pertama kali kamu menjalankan [/][{C_ACCENT}]autodeploy[/][{C_LABEL}].\n"
+            f"Setup ini hanya perlu dilakukan sekali.\n"
+            f"Konfigurasi akan disimpan di [/][{C_ACCENT}]{escape(str(_get_config_path()))}[/]"
+        ),
+        "First-time setup", tone="accent",
     ))
     console.print()
 
     # ── Pilih provider ────────────────────────────────────────────────────────
-    console.print(f"  [{C_VAL}]Pilih AI provider:[/]\n")
-    console.print(f"  [{C_DIM}]1.[/]  [{C_OK}]OpenRouter[/] [{C_DIM}]— gratis, 20+ model  (https://openrouter.ai)[/]")
-    console.print(f"  [{C_DIM}]2.[/]  [{C_OK}]Cloudflare[/] [{C_DIM}]— gratis, Workers AI (https://dash.cloudflare.com)[/]")
-    console.print(f"  [{C_DIM}]3.[/]  [{C_OK}]Groq[/]       [{C_DIM}]— gratis, cepat      (https://console.groq.com/keys)[/]")
-    console.print(f"  [{C_DIM}]4.[/]  [{C_ACCENT}]Ollama[/]     [{C_DIM}]— lokal, offline, tidak perlu API key[/]")
-    console.print(f"  [{C_DIM}]5.[/]  [{C_LABEL}]OpenAI[/]     [{C_DIM}]— berbayar           (https://platform.openai.com/api-keys)[/]")
+    console.print(card(_provider_table(), "Pilih AI provider"))
     console.print()
 
     while True:
-        try:
-            choice = pt_prompt(
-                HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>Provider (1/2/3/4/5)  </ansicyan>'),
-                style=PT_STYLE,
-            ).strip()
-        except (KeyboardInterrupt, EOFError):
-            raise KeyboardInterrupt
-
-        if choice == "1":
-            provider = "openrouter"
+        choice = ask("Provider (1/2/3/4/5)")
+        if choice in {"1", "2", "3", "4", "5"}:
+            provider = PROVIDERS[int(choice) - 1][0]
             break
-        elif choice == "2":
-            provider = "cloudflare"
-            break
-        elif choice == "3":
-            provider = "groq"
-            break
-        elif choice == "4":
-            provider = "ollama"
-            break
-        elif choice == "5":
-            provider = "openai"
-            break
-        else:
-            ui_warn("Masukkan 1, 2, 3, 4, atau 5.")
+        ui_warn("Masukkan 1, 2, 3, 4, atau 5.")
 
     config_lines = [f"AI_PROVIDER={provider}"]
 
     # ── API key OpenRouter ────────────────────────────────────────────────────
     if provider == "openrouter":
         console.print()
-        console.print(Panel(
-            f"[{C_DIM}]Daftar gratis di [/][{C_ACCENT}]https://openrouter.ai[/][{C_DIM}]\n"
-            f"Klik [/][{C_ACCENT}]Keys[/][{C_DIM}] → [/][{C_ACCENT}]Create Key[/][{C_DIM}] → paste di bawah.[/]",
-            border_style=C_DIM, box=SQUARE, padding=(0, 2),
+        console.print(hint(
+            f"[{C_LABEL}]Daftar gratis di [/][{C_ACCENT}]https://openrouter.ai[/]\n"
+            f"[{C_LABEL}]Klik [/][{C_ACCENT}]Keys[/][{C_LABEL}] → [/][{C_ACCENT}]Create Key[/][{C_LABEL}] → paste di bawah.[/]"
         ))
         console.print()
         while True:
-            try:
-                key = pt_prompt(
-                    HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>OpenRouter API Key  </ansicyan>'),
-                    style=PT_STYLE,
-                    placeholder="  sk-or-...",
-                ).strip()
-            except (KeyboardInterrupt, EOFError):
-                raise KeyboardInterrupt
+            key = ask("OpenRouter API Key", "sk-or-...")
             if key.startswith("sk-or-") and len(key) > 20:
                 break
             ui_warn("API key tidak valid. Harus diawali 'sk-or-'.")
@@ -244,53 +234,30 @@ def run_setup_wizard():
     # ── API key Cloudflare ────────────────────────────────────────────────────
     elif provider == "cloudflare":
         console.print()
-        console.print(Panel(
-            f"[{C_DIM}]Daftar gratis di [/][{C_ACCENT}]https://dash.cloudflare.com[/][{C_DIM}]\n"
-            f"Account ID ada di sidebar kanan dashboard.\n"
-            f"API Token: Profile → API Tokens → Create Token → Workers AI template.[/]",
-            border_style=C_DIM, box=SQUARE, padding=(0, 2),
+        console.print(hint(
+            f"[{C_LABEL}]Daftar gratis di [/][{C_ACCENT}]https://dash.cloudflare.com[/]\n"
+            f"[{C_LABEL}]Account ID ada di sidebar kanan dashboard.\n"
+            f"API Token: Profile → API Tokens → Create Token → Workers AI template.[/]"
         ))
         console.print()
         while True:
-            try:
-                account_id = pt_prompt(
-                    HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>Account ID  </ansicyan>'),
-                    style=PT_STYLE,
-                    placeholder="  01b402d8ebd6d105b6dd06a792a704b7",
-                ).strip()
-            except (KeyboardInterrupt, EOFError):
-                raise KeyboardInterrupt
+            account_id = ask("Account ID", "01b402d8ebd6d105b6dd06a792a704b7")
             if len(account_id) >= 32:
                 break
             ui_warn("Account ID tidak valid.")
         while True:
-            try:
-                cf_token = pt_prompt(
-                    HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>API Token  </ansicyan>'),
-                    style=PT_STYLE,
-                    placeholder="  cfut_...",
-                ).strip()
-            except (KeyboardInterrupt, EOFError):
-                raise KeyboardInterrupt
+            cf_token = ask("API Token", "cfut_...")
             if len(cf_token) > 20:
                 break
             ui_warn("API Token tidak valid.")
         console.print()
-        console.print(Panel(
-            f"[{C_DIM}]Model default: [/][{C_ACCENT}]@cf/meta/llama-4-scout-17b-16e-instruct[/]\n"
-            f"[{C_DIM}]Model lain tersedia di [/][{C_ACCENT}]https://developers.cloudflare.com/workers-ai/models/[/]\n"
-            f"[{C_DIM}]Tekan Enter untuk pakai default.[/]",
-            border_style=C_DIM, box=SQUARE, padding=(0, 2),
+        console.print(hint(
+            f"[{C_LABEL}]Model default: [/][{C_ACCENT}]@cf/meta/llama-4-scout-17b-16e-instruct[/]\n"
+            f"[{C_LABEL}]Model lain tersedia di [/][{C_ACCENT}]https://developers.cloudflare.com/workers-ai/models/[/]\n"
+            f"[{C_LABEL}]Tekan Enter untuk pakai default.[/]"
         ))
         console.print()
-        try:
-            cf_model = pt_prompt(
-                HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>Model  </ansicyan>'),
-                style=PT_STYLE,
-                placeholder="  @cf/meta/llama-4-scout-17b-16e-instruct",
-            ).strip()
-        except (KeyboardInterrupt, EOFError):
-            raise KeyboardInterrupt
+        cf_model = ask("Model", "@cf/meta/llama-4-scout-17b-16e-instruct")
         cf_model = cf_model or "@cf/meta/llama-4-scout-17b-16e-instruct"
         config_lines += [
             f"CLOUDFLARE_ACCOUNT_ID={account_id}",
@@ -301,21 +268,13 @@ def run_setup_wizard():
     # ── API key Groq ──────────────────────────────────────────────────────────
     elif provider == "groq":
         console.print()
-        console.print(Panel(
-            f"[{C_DIM}]Daftar gratis di [/][{C_ACCENT}]https://console.groq.com/keys[/][{C_DIM}]\n"
-            f"lalu buat API key baru dan paste di bawah.[/]",
-            border_style=C_DIM, box=SQUARE, padding=(0, 2),
+        console.print(hint(
+            f"[{C_LABEL}]Daftar gratis di [/][{C_ACCENT}]https://console.groq.com/keys[/]\n"
+            f"[{C_LABEL}]lalu buat API key baru dan paste di bawah.[/]"
         ))
         console.print()
         while True:
-            try:
-                key = pt_prompt(
-                    HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>Groq API Key  </ansicyan>'),
-                    style=PT_STYLE,
-                    placeholder="  gsk_...",
-                ).strip()
-            except (KeyboardInterrupt, EOFError):
-                raise KeyboardInterrupt
+            key = ask("Groq API Key", "gsk_...")
             if key.startswith("gsk_") and len(key) > 20:
                 break
             ui_warn("API key tidak valid. Harus diawali 'gsk_'.")
@@ -326,20 +285,12 @@ def run_setup_wizard():
 
     elif provider == "openai":
         console.print()
-        console.print(Panel(
-            f"[{C_DIM}]Dapatkan API key di [/][{C_ACCENT}]https://platform.openai.com/api-keys[/]",
-            border_style=C_DIM, box=SQUARE, padding=(0, 2),
+        console.print(hint(
+            f"[{C_LABEL}]Dapatkan API key di [/][{C_ACCENT}]https://platform.openai.com/api-keys[/]"
         ))
         console.print()
         while True:
-            try:
-                key = pt_prompt(
-                    HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>OpenAI API Key  </ansicyan>'),
-                    style=PT_STYLE,
-                    placeholder="  sk-...",
-                ).strip()
-            except (KeyboardInterrupt, EOFError):
-                raise KeyboardInterrupt
+            key = ask("OpenAI API Key", "sk-...")
             if key.startswith("sk-") and len(key) > 20:
                 break
             ui_warn("API key tidak valid. Harus diawali 'sk-'.")
@@ -350,35 +301,21 @@ def run_setup_wizard():
 
     elif provider == "ollama":
         console.print()
-        console.print(Panel(
-            f"[{C_DIM}]Pastikan Ollama sudah running (lokal atau VPS/container).\n"
-            f"Download: [/][{C_ACCENT}]https://ollama.com[/]\n\n"
-            f"[{C_VAL}]Contoh URL:[/]\n"
-            f"  [{C_DIM}]•[/]  Lokal          [{C_ACCENT}]http://localhost:11434[/]\n"
-            f"  [{C_DIM}]•[/]  VPS            [{C_ACCENT}]http://123.456.789.0:11434[/]\n"
-            f"  [{C_DIM}]•[/]  Docker         [{C_ACCENT}]http://host.docker.internal:11434[/]\n"
-            f"  [{C_DIM}]•[/]  Custom port    [{C_ACCENT}]http://123.456.789.0:10228[/]",
-            border_style=C_DIM, box=SQUARE, padding=(0, 2),
+        console.print(card(
+            Text.from_markup(
+                f"[{C_LABEL}]Pastikan Ollama sudah running (lokal atau VPS/container).\n"
+                f"Download: [/][{C_ACCENT}]https://ollama.com[/]\n\n"
+                f"[{C_VAL}]Contoh URL[/]\n"
+                f"  [{C_DIM}]•[/]  Lokal        [{C_ACCENT}]http://localhost:11434[/]\n"
+                f"  [{C_DIM}]•[/]  VPS          [{C_ACCENT}]http://123.456.789.0:11434[/]\n"
+                f"  [{C_DIM}]•[/]  Docker       [{C_ACCENT}]http://host.docker.internal:11434[/]\n"
+                f"  [{C_DIM}]•[/]  Custom port  [{C_ACCENT}]http://123.456.789.0:10228[/]"
+            ),
+            padding=(0, 2),
         ))
         console.print()
-        try:
-            ollama_url = pt_prompt(
-                HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>Ollama URL  </ansicyan>'),
-                style=PT_STYLE,
-                placeholder="  http://localhost:11434",
-            ).strip()
-        except (KeyboardInterrupt, EOFError):
-            raise KeyboardInterrupt
-        ollama_url = ollama_url or "http://localhost:11434"
-        try:
-            model = pt_prompt(
-                HTML('<ansibrightblack>  &gt; </ansibrightblack><ansicyan>Model name  </ansicyan>'),
-                style=PT_STYLE,
-                placeholder="  llama3.2:latest",
-            ).strip()
-        except (KeyboardInterrupt, EOFError):
-            raise KeyboardInterrupt
-        model = model or "llama3.2:latest"
+        ollama_url = ask("Ollama URL", "http://localhost:11434") or "http://localhost:11434"
+        model = ask("Model name", "llama3.2:latest") or "llama3.2:latest"
         config_lines += [
             f"OLLAMA_URL={ollama_url}",
             f"OLLAMA_MODEL={model}",
@@ -405,50 +342,38 @@ def run_setup_wizard():
     GROQ_MODEL            = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
 
     console.print()
-    console.print(Panel(
-        f"[{C_OK}]✓  Setup selesai![/]\n\n"
-        f"[{C_DIM}]Konfigurasi disimpan di [/][{C_ACCENT}]{_get_config_path()}[/]\n"
-        f"[{C_DIM}]Untuk mengubah, edit file tersebut atau jalankan [/][{C_ACCENT}]autodeploy --setup[/]",
-        border_style=C_OK, box=SQUARE, padding=(1, 2),
+    console.print(card(
+        Text.from_markup(
+            f"[bold {C_OK}]✓  Setup selesai![/]\n\n"
+            f"[{C_LABEL}]Konfigurasi disimpan di [/][{C_ACCENT}]{escape(str(_get_config_path()))}[/]\n"
+            f"[{C_LABEL}]Untuk mengubah, edit file tersebut atau jalankan [/][{C_ACCENT}]autodeploy --setup[/]"
+        ),
+        "Ready", tone="ok",
     ))
     console.print()
-    try:
-        console.print(f"  [{C_DIM}]Tekan Enter untuk melanjutkan deploy...[/]", end="")
-        input()
-    except (KeyboardInterrupt, EOFError):
-        pass
-
+    ui_wait("Tekan Enter untuk melanjutkan deploy...")
 
 def run_uninstall():
     """Hapus konfigurasi dan uninstall package autodeploy-ai."""
     ui_clear()
     ui_banner()
 
-    console.print(Panel(
-        f"[{C_WARN}]Ini akan menghapus:[/]\n\n"
-        f"  [{C_DIM}]•[/]  Config file  [{C_ACCENT}]{_get_config_path()}[/]\n"
-        f"  [{C_DIM}]•[/]  Package      [{C_ACCENT}]autodeploy-ai[/]  (pip uninstall)\n\n"
-        f"[{C_DIM}]Command [/][{C_ACCENT}]autodeploy[/][{C_DIM}] tidak akan bisa dipakai lagi.[/]",
-        title=f"[bold {C_WARN}] ✦  UNINSTALL [/]",
-        title_align="left",
-        border_style=C_WARN,
-        box=SQUARE,
-        padding=(1, 2),
+    console.print(card(
+        Text.from_markup(
+            f"[bold {C_WARN}]Ini akan menghapus:[/]\n\n"
+            f"  [{C_DIM}]•[/]  Config file  [{C_ACCENT}]{escape(str(_get_config_path()))}[/]\n"
+            f"  [{C_DIM}]•[/]  Package      [{C_ACCENT}]autodeploy-ai[/]  [{C_DIM}](pip uninstall)[/]\n\n"
+            f"[{C_LABEL}]Command [/][{C_ACCENT}]autodeploy[/][{C_LABEL}] tidak akan bisa dipakai lagi.[/]"
+        ),
+        "Uninstall", tone="warn",
     ))
     console.print()
 
-    try:
-        confirm = pt_prompt(
-            HTML(f'<ansibrightblack>  &gt; </ansibrightblack><ansiyellow>Yakin? (y/N)  </ansiyellow>'),
-            style=PT_STYLE,
-        ).strip().lower()
-    except (KeyboardInterrupt, EOFError):
-        raise KeyboardInterrupt
+    confirm = ask("Yakin? (y/N)").lower()
 
     if confirm not in ("y", "yes"):
-        console.print(f"\n  [{C_DIM}]Uninstall dibatalkan.[/]\n")
+        ui_cancel("Uninstall dibatalkan.")
         return
-
     # Hapus config file + folder (Windows: C:\ProgramData\autodeploy\)
     if ENV_PATH.exists():
         ENV_PATH.unlink()
@@ -543,10 +468,12 @@ print("✓ Uninstall selesai!")
                 stderr=subprocess.DEVNULL)
 
     console.print()
-    console.print(Panel(
-        f"[{C_OK}]Uninstall dimulai...[/]\n\n"
-        f"[{C_DIM}]Program akan keluar dan uninstall akan selesai dalam beberapa detik.",
-        border_style=C_OK, box=SQUARE, padding=(1, 2),
+    console.print(card(
+        Text.from_markup(
+            f"[bold {C_OK}]Uninstall dimulai...[/]\n\n"
+            f"[{C_LABEL}]Program akan keluar dan uninstall akan selesai dalam beberapa detik.[/]"
+        ),
+        "Uninstalling", tone="ok",
     ))
     console.print()
 
@@ -558,55 +485,170 @@ print("✓ Uninstall selesai!")
 #  UI HELPERS
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+_TONES = {"line": C_LINE, "accent": C_ACCENT, "ok": C_OK, "warn": C_WARN, "err": C_ERR}
+_TIMINGS: list[float] = []   # total waktu tiap step, untuk ringkasan akhir
+
+
 def ui_clear():
     os.system("cls" if os.name == "nt" else "clear")
 
 
+def _w() -> int:
+    """Lebar konten maksimum — dibatasi supaya tetap rapi di terminal lebar."""
+    return min(console.width, 100)
+
+
+def _hex_rgb(h: str) -> tuple[int, int, int]:
+    h = h.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def gradient_text(s: str, stops=BRAND_GRADIENT, bold: bool = True) -> Text:
+    """Teks dengan gradient warna per-karakter (turun otomatis ke 256/16 warna)."""
+    out = Text()
+    segs = len(stops) - 1
+    n = max(len(s) - 1, 1)
+    for i, ch in enumerate(s):
+        pos = i / n * segs
+        k = min(int(pos), segs - 1)
+        f = pos - k
+        a, b = _hex_rgb(stops[k]), _hex_rgb(stops[k + 1])
+        r, g, bl = (round(a[j] + (b[j] - a[j]) * f) for j in range(3))
+        out.append(ch, style=f"{'bold ' if bold else ''}#{r:02x}{g:02x}{bl:02x}")
+    return out
+
+
+def badge(label: str, color: str) -> Text:
+    """Chip kecil berwarna, mis.  FREE  /  feat ."""
+    t = Text(f" {label} ")
+    t.stylize(f"bold {C_INK} on {color}")   # stylize (bukan base style) → padding sel tidak ikut berwarna
+    return t
+
+
+def card(body, title: str = "", tone: str = "line", subtitle: str = "",
+         padding: tuple[int, int] = (1, 2)) -> Panel:
+    """Panel rounded dengan judul bertitik warna — pengganti Panel kotak lama."""
+    color = _TONES.get(tone, C_LINE)
+    dot = C_ACCENT if tone == "line" else color
+    t = Text.assemble(("● ", dot), (title, f"bold {C_TEXT}")) if title else None
+    sub = Text(subtitle, style=C_DIM) if subtitle else None
+    return Panel(
+        body, title=t, title_align="left", subtitle=sub, subtitle_align="right",
+        border_style=color, box=box.ROUNDED, padding=padding, width=_w(),
+    )
+
+
+def hint(markup: str, tone: str = "line") -> Panel:
+    """Kartu tipis tanpa judul untuk petunjuk singkat."""
+    return card(Text.from_markup(markup), tone=tone, padding=(0, 2))
+
+
+def kv(rows: list[tuple[str, object]], label_w: int = 9) -> Table:
+    g = Table.grid(padding=(0, 2))
+    g.add_column(style=C_LABEL, no_wrap=True, min_width=label_w)
+    g.add_column(overflow="fold")
+    for k, v in rows:
+        g.add_row(k, v)
+    return g
+
+
+# ── Input ─────────────────────────────────────────────────────────────────────
+def _pt(label: str) -> HTML:
+    return HTML(f'<arrow>  ❯ </arrow><label>{_xml_escape(label)}  </label>')
+
+
+def ask(label: str, placeholder: str = "") -> str:
+    """Prompt satu baris. Ctrl+C / Ctrl+D dianggap pembatalan."""
+    try:
+        return pt_prompt(_pt(label), style=PT_STYLE, placeholder=placeholder or None).strip()
+    except (KeyboardInterrupt, EOFError):
+        raise KeyboardInterrupt
+
+
+def ui_wait(message: str):
+    try:
+        console.print(f"  [{C_DIM}]{message}[/]", end="")
+        input()
+    except (KeyboardInterrupt, EOFError):
+        pass
+
+
+# ── Remote / commit helpers ───────────────────────────────────────────────────
+def _remote_parts(remote: str) -> tuple[str, str]:
+    """Return (teks tampilan, URL web). Credential di URL tidak ikut ditampilkan."""
+    r = (remote or "").strip()
+    if r.endswith(".git"):
+        r = r[:-4]
+    if r.startswith("git@github.com:"):
+        path = r.split(":", 1)[1]
+    elif "github.com/" in r:
+        path = r.split("github.com/", 1)[1]
+    else:
+        return (remote or "not set"), ""
+    path = path.strip("/")
+    return f"github.com/{path}", f"https://github.com/{path}"
+
+
+def remote_text(remote: str) -> Text:
+    label, url = _remote_parts(remote)
+    if not url:
+        return Text(label, style=C_VAL)
+    t = Text(label)
+    t.stylize(Style(color=C_ACCENT, underline=True, link=url))
+    return t
+
+
+_COMMIT_RE = re.compile(r"^(\w+)(?:\(([^)]*)\))?(!)?:\s*(.+)$")
+_TYPE_COLORS = {
+    "feat": "#34d399", "fix": "#f87171", "docs": "#fbbf24", "style": "#5eead4",
+    "refactor": "#fb923c", "chore": "#9ca3af", "test": "#a3e635",
+}
+
+
+def commit_text(msg: str) -> Text:
+    """Render 'type(scope): deskripsi' dengan badge tipe berwarna."""
+    msg = (msg or "").strip()
+    m = _COMMIT_RE.match(msg)
+    if not m:
+        return Text(msg, style=f"bold {C_TEXT}")
+    typ, scope, bang, desc = m.groups()
+    t = Text()
+    t.append_text(badge(typ.lower(), _TYPE_COLORS.get(typ.lower(), C_LABEL)))
+    if scope:
+        t.append(f"  {scope}", style=f"bold {C_ACCENT}")
+    if bang:
+        t.append("!", style=f"bold {C_ERR}")
+    t.append(f"  {desc}", style=f"bold {C_TEXT}")
+    return t
+
+
+# ── Banner & session ──────────────────────────────────────────────────────────
 def ui_banner():
-    _ensure("pyfiglet")
-    import pyfiglet
-    fig = pyfiglet.figlet_format("AutoDeploy", font=LOGO, justify="center",
-                                  width=console.width or 100)
+    title = Text("  ")
+    title.append("▲ ", style=f"bold {C_ACCENT}")
+    title.append_text(gradient_text("autodeploy"))
+    title.append("  ")
+    title.append(f" v{APP_VERSION} ", style=f"{C_LABEL} on {C_CHIP}")
     console.print()
-    console.print(f"[{C_HEAD}]{fig.rstrip()}[/]")
+    console.print(title)
+    console.print(Text("  git init  ·  ai commit  ·  auto push", style=C_DIM))
     console.print()
-    console.print(Align.center(Text(f"v{APP_VERSION}  ·  Git Init  ·  AI Commit  ·  Auto Push", style=C_DIM)))
-    console.print()
-    console.print(Align.center(Text("─" * 56, style=C_LINE)))
+
+
+@contextmanager
+def working(label: str):
+    """Spinner transient (hilang setelah selesai) dengan indent konsisten."""
+    spin = Spinner("dots", text=Text(f" {label}…", style=C_LABEL), style=C_ACCENT)
+    with Live(Padding(spin, (0, 0, 0, 2)), console=console, transient=True,
+              refresh_per_second=20):
+        yield
 
 
 def ui_splash():
     ui_clear()
     ui_banner()
-    labels = ["Initialising", "Reading workspace", "Loading config", "Ready"]
-    term_width = os.get_terminal_size().columns if hasattr(os, "get_terminal_size") else 80
-    for label in labels:
-        text = f"[ {label} ]"
-        padded = text.center(term_width)
-        sys.stdout.write(f"\033[2K\r{padded}")
-        sys.stdout.flush()
-        time.sleep(0.15)
-    sys.stdout.write("\033[2K\r")
-    sys.stdout.flush()
-
-
-def ui_header(repo_dir: str, branch: str, remote: str, ai_provider: str):
-    body = Table.grid(padding=(0, 2))
-    body.add_column(justify="right", style=C_LABEL, min_width=10)
-    body.add_column(style=C_VAL)
-
-    body.add_row("REMOTE", escape(remote or "not set"))
-    body.add_row("BRANCH", f"[{C_ACCENT}]{escape(branch or DEFAULT_BRANCH)}[/]")
-    body.add_row("AI", f"[{C_OK}]{ai_provider.upper()}[/]  [{C_DIM}]{_ai_model_label()}[/]")
-
-    console.print(Panel(
-        body,
-        title="[bold white] SESSION [/]",
-        title_align="left",
-        border_style=C_LINE,
-        box=SQUARE,
-        padding=(1, 2),
-    ))
+    with working("Reading workspace"):
+        time.sleep(0.35)
 
 
 def _ai_model_label() -> str:
@@ -623,57 +665,91 @@ def _ai_model_label() -> str:
     return "unknown"
 
 
-def ui_success(commit_msg: str, branch: str, remote: str):
-    body = Table.grid(padding=(0, 2))
-    body.add_column(justify="right", style=C_LABEL, min_width=10)
-    body.add_column(style=C_TEXT)
-    body.add_row("COMMIT", escape(commit_msg))
-    body.add_row("BRANCH", f"[{C_ACCENT}]{escape(branch)}[/]")
-    body.add_row("REMOTE", escape(remote))
-
-    console.print()
-    console.print(Panel(
-        body,
-        title=f"[bold {C_OK}] DEPLOY COMPLETE [/]",
-        title_align="left",
-        border_style=C_OK,
-        box=DOUBLE_EDGE,
-        padding=(1, 2),
-    ))
-    console.print()
-
-
-def ui_error(message: str):
-    console.print()
-    console.print(Panel(
-        f"[{C_TEXT}]{escape(str(message))}[/]",
-        title=f"[bold {C_ERR}] ERROR [/]",
-        title_align="left",
-        border_style=C_ERR,
-        box=DOUBLE_EDGE,
-        padding=(1, 2),
-    ))
-    console.print()
-
-
-def ui_warn(message: str):
-    console.print(f"\n  [bold {C_WARN}]![/] [{C_WARN}]{escape(message)}[/]\n")
-
-
-def ui_step(label: str, value: str = ""):
-    val_str = f"  [{C_DIM}]{escape(value)}[/]" if value else ""
-    console.print(f"  [{C_ACCENT}]>[/] [{C_TEXT}]{escape(label)}[/]{val_str}")
+def ui_header(repo_dir: str, branch: str, remote: str, ai_provider: str):
+    ai = Text.assemble((ai_provider, f"bold {C_OK}"), ("  ·  ", C_LINE), (_ai_model_label(), C_DIM))
+    body = kv([
+        ("Project", Text(Path(repo_dir).name or repo_dir, style=f"bold {C_TEXT}")),
+        ("Remote",  remote_text(remote)),
+        ("Branch",  Text(branch or DEFAULT_BRANCH, style=C_ACCENT)),
+        ("AI",      ai),
+    ])
+    console.print(card(body, "Session", padding=(1, 2)))
 
 
 def ui_tips():
-    console.print(Panel(
-        f"[{C_LABEL}]Enter[/] [{C_DIM}]terima commit message AI   ·   [/]"
-        f"[{C_LABEL}]ketik pesan[/] [{C_DIM}]untuk override   ·   [/]"
-        f"[{C_LABEL}]Ctrl+C[/] [{C_DIM}]batal kapan saja[/]",
-        border_style=C_DIM,
-        box=MINIMAL,
-        padding=(0, 1),
-    ))
+    t = Text("  ")
+    for key, desc in (("↵", "terima pesan AI"), ("ketik", "untuk override"), ("ctrl+c", "batal")):
+        t.append(f" {key} ", style=f"{C_VAL} on {C_CHIP}")
+        t.append(f" {desc}    ", style=C_DIM)
+    console.print(t)
+    console.print()
+
+
+# ── Status lines ──────────────────────────────────────────────────────────────
+def ui_done(label: str, ok: bool = True, elapsed: float | None = None, detail: str = ""):
+    """Baris hasil satu step:  ✓  Staging changes      0.1s"""
+    if elapsed is not None:
+        _TIMINGS.append(elapsed)
+    t = Text("  ")
+    t.append("✓" if ok else "✗", style=f"bold {C_OK if ok else C_ERR}")
+    t.append("  ")
+    t.append(label.ljust(26), style=C_TEXT if ok else C_ERR)
+    if elapsed is not None:
+        t.append(f"{elapsed:>5.1f}s", style=C_DIM)
+    if detail:
+        t.append(f"   {detail}", style=C_DIM)
+    console.print(t)
+
+
+def ui_step(label: str, value: str = ""):
+    t = Text("  ")
+    t.append("›", style=f"bold {C_ACCENT}")
+    t.append(f"  {label}", style=C_TEXT)
+    if value:
+        t.append(f"  {value}", style=C_DIM)
+    console.print(t)
+
+
+def ui_warn(message: str):
+    console.print()
+    console.print(Text.assemble("  ", ("▲", f"bold {C_WARN}"), "  ", (message, C_WARN)))
+    console.print()
+
+
+def ui_cancel(message: str):
+    console.print()
+    console.print(Text.assemble("  ", ("■", C_WARN), "  ", (message, C_DIM)))
+    console.print()
+
+
+def ui_error(message: str, hints: list[str] | None = None,
+             hint_label: str = "Kemungkinan penyebab", detail: str = ""):
+    parts: list = [Text(str(message), style=f"bold {C_TEXT}")]
+    if hints:
+        parts.append(Text(""))
+        parts.append(Text(hint_label, style=C_LABEL))
+        for h in hints:
+            parts.append(Text.assemble(("  •  ", C_DIM), (h, C_VAL)))
+    if detail:
+        parts.append(Text(""))
+        parts.append(Text(detail, style=C_DIM))
+    console.print()
+    console.print(card(Group(*parts), "Error", tone="err"))
+    console.print()
+
+
+def ui_success(commit_msg: str, branch: str, remote: str, sha: str = "", elapsed: float | None = None):
+    commit = commit_text(commit_msg)
+    if sha:
+        commit.append(f"   {sha}", style=C_DIM)
+    body = kv([
+        ("Commit", commit),
+        ("Branch", Text(branch, style=C_ACCENT)),
+        ("Remote", remote_text(remote)),
+    ])
+    sub = f"selesai dalam {elapsed:.1f}s" if elapsed else ""
+    console.print()
+    console.print(card(body, "Deploy complete", tone="ok", subtitle=sub))
     console.print()
 
 
@@ -691,39 +767,24 @@ def run(cmd: list[str], capture: bool = False) -> subprocess.CompletedProcess:
     )
 
 
-def spin_run(cmd: list[str], label: str) -> subprocess.CompletedProcess:
-    """Jalankan command sambil tampilkan spinner animasi, lalu print status akhir."""
-    import threading
-    frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-    stop   = threading.Event()
-    result_box: list[subprocess.CompletedProcess] = []
-
-    def _spin():
-        i = 0
-        while not stop.is_set():
-            sys.stdout.write(f"\r  \033[{C_DIM_ANSI}m{frames[i % len(frames)]}\033[0m  {label}...")
-            sys.stdout.flush()
-            time.sleep(0.08)
-            i += 1
-
-    t = threading.Thread(target=_spin, daemon=True)
-    t.start()
-    try:
-        result_box.append(subprocess.run(
-            cmd, capture_output=True, text=True,
-            encoding="utf-8", errors="replace",
-        ))
-    finally:
-        stop.set()
-        t.join()
-        sys.stdout.write("\r" + " " * 60 + "\r")
-        sys.stdout.flush()
-
-    result = result_box[0]
-    if result.returncode == 0:
-        console.print(f"  [{C_OK}]✓[/]  {label}")
+def spin_run(cmd: list[str], label: str, detail: str = "",
+             interactive: bool = False) -> subprocess.CompletedProcess:
+    """
+    Jalankan command dengan spinner, lalu cetak baris hasil (✓/✗ + durasi).
+    interactive=True → tanpa spinner & tanpa capture, supaya prompt login Git
+    tidak tertimpa animasi.
+    """
+    t0 = time.perf_counter()
+    if interactive:
+        ui_step(f"{label}…")
+        result = subprocess.run(cmd, text=True, encoding="utf-8", errors="replace")
     else:
-        console.print(f"  [{C_ERR}]✗[/]  {label}")
+        with working(label):
+            result = subprocess.run(
+                cmd, capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
+            )
+    ui_done(label, ok=result.returncode == 0, elapsed=time.perf_counter() - t0, detail=detail)
     return result
 
 
@@ -732,8 +793,14 @@ def git_has_changes() -> bool:
 
 
 def git_current_branch() -> str:
-    result = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture=True)
-    return (result.stdout or "").strip() or DEFAULT_BRANCH
+    # symbolic-ref tetap bekerja di repo baru yang belum punya commit
+    # (rev-parse --abbrev-ref mengembalikan "HEAD" di kondisi itu)
+    result = run(["git", "symbolic-ref", "--short", "-q", "HEAD"], capture=True)
+    name = (result.stdout or "").strip()
+    if not name:
+        result = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture=True)
+        name = (result.stdout or "").strip()
+    return name or DEFAULT_BRANCH
 
 
 def git_remote_url() -> str:
@@ -910,72 +977,51 @@ def _call_ollama(diff: str) -> str:
 def generate_commit_message(diff: str) -> str:
     """Generate AI commit message pakai spinner, lalu user confirm atau override."""
     ai_msg = ""
-    stop   = threading.Event()
-    frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    t0 = time.perf_counter()
 
-    def _spin():
-        i = 0
-        while not stop.is_set():
-            sys.stdout.write(f"\r  \033[2m{frames[i % len(frames)]}\033[0m  Generating commit message...")
-            sys.stdout.flush()
-            time.sleep(0.08)
-            i += 1
-
-    t = threading.Thread(target=_spin, daemon=True)
-    t.start()
     try:
-        if AI_PROVIDER == "openai":
-            if not OPENAI_KEY:
-                raise ValueError("OPENAI_API_KEY tidak ada di .env")
-            ai_msg = _call_openai(diff)
-        elif AI_PROVIDER == "groq":
-            if not GROQ_KEY:
-                raise ValueError("GROQ_API_KEY tidak ada di .env")
-            ai_msg = _call_groq(diff)
-        elif AI_PROVIDER == "openrouter":
-            if not OPENROUTER_KEY:
-                raise ValueError("OPENROUTER_API_KEY tidak ada di .env")
-            ai_msg = _call_openrouter(diff)
-        elif AI_PROVIDER == "cloudflare":
-            if not CLOUDFLARE_ACCOUNT_ID or not CLOUDFLARE_API_TOKEN:
-                raise ValueError("CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN tidak ada di .env")
-            ai_msg = _call_cloudflare(diff)
-        elif AI_PROVIDER == "ollama":
-            ai_msg = _call_ollama(diff)
-        else:
-            raise ValueError(f"AI provider tidak dikenal: {AI_PROVIDER}")
+        with working("Generating commit message"):
+            if AI_PROVIDER == "openai":
+                if not OPENAI_KEY:
+                    raise ValueError("OPENAI_API_KEY tidak ada di .env")
+                ai_msg = _call_openai(diff)
+            elif AI_PROVIDER == "groq":
+                if not GROQ_KEY:
+                    raise ValueError("GROQ_API_KEY tidak ada di .env")
+                ai_msg = _call_groq(diff)
+            elif AI_PROVIDER == "openrouter":
+                if not OPENROUTER_KEY:
+                    raise ValueError("OPENROUTER_API_KEY tidak ada di .env")
+                ai_msg = _call_openrouter(diff)
+            elif AI_PROVIDER == "cloudflare":
+                if not CLOUDFLARE_ACCOUNT_ID or not CLOUDFLARE_API_TOKEN:
+                    raise ValueError("CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN tidak ada di .env")
+                ai_msg = _call_cloudflare(diff)
+            elif AI_PROVIDER == "ollama":
+                ai_msg = _call_ollama(diff)
+            else:
+                raise ValueError(f"AI provider tidak dikenal: {AI_PROVIDER}")
     except Exception as exc:
         ai_msg = ""
-        stop.set()
-        t.join()
-        sys.stdout.write("\r" + " " * 60 + "\r")
-        sys.stdout.flush()
-        console.print(f"  [{C_ERR}]✗[/]  Generating commit message")
+        ui_done("Generating commit message", ok=False, elapsed=time.perf_counter() - t0)
         ui_warn(f"AI gagal: {str(exc)}")
     else:
-        stop.set()
-        t.join()
-        sys.stdout.write("\r" + " " * 60 + "\r")
-        sys.stdout.flush()
         if ai_msg:
-            console.print(f"  [{C_OK}]✓[/]  Generating commit message")
+            ui_done("Generating commit message", elapsed=time.perf_counter() - t0)
 
     if ai_msg:
         console.print()
-        console.print(Panel(
-            f"[bold {C_TEXT}]{escape(ai_msg)}[/]",
-            title="[bold white] SUGGESTED COMMIT [/]",
-            title_align="left",
-            border_style=C_LINE,
-            box=SQUARE,
-            padding=(0, 2),
+        console.print(card(
+            commit_text(ai_msg), "Suggested commit",
+            subtitle="enter ↵ terima  ·  atau ketik pesan sendiri",
+            padding=(1, 2),
         ))
         console.print()
         try:
             override = pt_prompt(
-                HTML('<ansibrightblack>  &gt; </ansibrightblack><ansigreen>commit  </ansigreen>'),
+                _pt("commit"),
                 style=PT_STYLE,
-                placeholder="  press Enter to accept, or type your own message",
+                placeholder="tekan Enter untuk terima, atau ketik pesan sendiri",
             ).strip()
         except EOFError:
             return ai_msg
@@ -987,9 +1033,9 @@ def generate_commit_message(diff: str) -> str:
     ui_warn("AI tidak bisa generate commit message. Masukkan manual:")
     try:
         msg = pt_prompt(
-            HTML('<ansibrightblack>  &gt; </ansibrightblack><ansigreen>commit  </ansigreen>'),
+            _pt("commit"),
             style=PT_STYLE,
-            placeholder="  e.g. feat(auth): add login endpoint",
+            placeholder="mis. feat(auth): add login endpoint",
         ).strip()
     except EOFError:
         msg = ""
@@ -1104,7 +1150,7 @@ def validate_github_url(url: str) -> tuple[bool, str]:
                 return True, ""
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            return False, f"Repo tidak ditemukan: [bold]{parts[0]}/{parts[1]}[/bold]\nBuat repo baru di [cyan]https://github.com/new[/cyan] terlebih dahulu."
+            return False, f"Repo tidak ditemukan: [bold]{parts[0]}/{parts[1]}[/bold]\nBuat repo baru di [{C_ACCENT}]https://github.com/new[/] terlebih dahulu."
         elif e.code == 403:
             # Rate limited tapi repo kemungkinan ada
             return True, ""
@@ -1120,6 +1166,21 @@ def validate_github_url(url: str) -> tuple[bool, str]:
 #  MAIN DEPLOY FLOW
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+def _new_repo_body() -> Group:
+    steps = kv([
+        ("1", Text.from_markup(f"[{C_VAL}]Buka [/][underline {C_ACCENT}]https://github.com/new[/][{C_VAL}] dan buat repo kosong[/]")),
+        ("2", Text("Copy URL repo-nya", style=C_VAL)),
+        ("3", Text("Paste di bawah ↓", style=C_VAL)),
+    ], label_w=1)
+    return Group(
+        Text.from_markup(f"[{C_LABEL}]Project ini belum punya [/][{C_ACCENT}].git[/][{C_LABEL}] — akan di-init otomatis.[/]"),
+        Text(""),
+        Text.from_markup(f"[bold {C_WARN}]▲[/] [{C_WARN}]Pastikan repo baru sudah dibuat di GitHub lebih dulu.[/]"),
+        Text(""),
+        steps,
+    )
+
+
 def deploy(github_url: str = ""):
     ui_splash()
 
@@ -1134,27 +1195,9 @@ def deploy(github_url: str = ""):
             if not github_url:
                 ui_clear()
                 ui_banner()
+                console.print(card(_new_repo_body(), "New repository"))
                 console.print()
-                console.print(Panel(
-                    f"[{C_DIM}]Project ini belum punya [/][{C_ACCENT}].git[/][{C_DIM}].[/]\n\n"
-                    f"[{C_WARN}]![/] [{C_VAL}]Pastikan kamu sudah membuat repo baru di GitHub terlebih dahulu.[/]\n"
-                    f"  [{C_DIM}]Buka [/][{C_ACCENT}]https://github.com/new[/][{C_DIM}] → buat repo → copy URL-nya.[/]\n\n"
-                    f"[{C_DIM}]Lalu masukkan URL repo tersebut di bawah.[/]",
-                    title="[bold white] NEW REPOSITORY [/]",
-                    title_align="left",
-                    border_style=C_LINE,
-                    box=SQUARE,
-                    padding=(1, 2),
-                ))
-                console.print()
-                try:
-                    github_url = pt_prompt(
-                        HTML('<ansibrightblack>  &gt; </ansibrightblack><ansigreen>github url  </ansigreen>'),
-                        style=PT_STYLE,
-                        placeholder="  https://github.com/username/repo",
-                    ).strip()
-                except (KeyboardInterrupt, EOFError):
-                    raise KeyboardInterrupt
+                github_url = ask("github url", "https://github.com/username/repo")
 
                 if not github_url:
                     ui_warn("URL tidak boleh kosong.")
@@ -1162,24 +1205,22 @@ def deploy(github_url: str = ""):
                     continue
 
             # Validasi repo
-            sys.stdout.write(f"\r  \033[2m⠸\033[0m  Checking repository...")
-            sys.stdout.flush()
-            valid, err_msg = validate_github_url(github_url)
-            sys.stdout.write("\r" + " " * 60 + "\r")
-            sys.stdout.flush()
+            t0 = time.perf_counter()
+            with working("Checking repository"):
+                valid, err_msg = validate_github_url(github_url)
 
             if valid:
-                console.print(f"  [{C_OK}]✓[/]  Repository found")
+                ui_done("Repository found", elapsed=time.perf_counter() - t0)
                 break
             else:
                 # Tampil error, tunggu Enter, lalu ulang dari awal
                 console.print()
-                console.print(Panel(
-                    f"[{C_ERR}]✗  Repo tidak ditemukan[/]\n\n"
-                    f"[{C_TEXT}]{err_msg}[/]",
-                    border_style=C_ERR,
-                    box=SQUARE,
-                    padding=(1, 2),
+                console.print(card(
+                    Text.from_markup(
+                        f"[bold {C_ERR}]✗  Repository tidak valid[/]\n\n"
+                        f"[{C_TEXT}]{err_msg}[/]"
+                    ),
+                    "Repository check", tone="err",
                 ))
                 console.print()
                 try:
@@ -1197,7 +1238,7 @@ def deploy(github_url: str = ""):
         run(["git", "init"])
         run(["git", "checkout", "-b", DEFAULT_BRANCH])
 
-        ui_step("git remote add origin", github_url)
+        ui_step("git remote add origin", _remote_parts(github_url)[0])
         run(["git", "remote", "add", "origin", github_url])
         remote = github_url
 
@@ -1209,30 +1250,18 @@ def deploy(github_url: str = ""):
         if not remote:
             if not github_url:
                 console.print()
-                console.print(Panel(
-                    f"[{C_DIM}]Repo ditemukan tapi belum punya remote origin. "
-                    f"Masukkan GitHub URL.[/]",
-                    title="[bold white] SET REMOTE [/]",
-                    title_align="left",
-                    border_style=C_LINE,
-                    box=SQUARE,
-                    padding=(1, 2),
+                console.print(card(
+                    Text("Repo ditemukan tapi belum punya remote origin. Masukkan GitHub URL.", style=C_LABEL),
+                    "Set remote",
                 ))
                 console.print()
-                try:
-                    github_url = pt_prompt(
-                        HTML('<ansibrightblack>  &gt; </ansibrightblack><ansigreen>github url  </ansigreen>'),
-                        style=PT_STYLE,
-                        placeholder="  https://github.com/username/repo",
-                    ).strip()
-                except (KeyboardInterrupt, EOFError):
-                    raise KeyboardInterrupt
+                github_url = ask("github url", "https://github.com/username/repo")
 
             if not github_url:
                 ui_error("GitHub URL diperlukan.")
                 sys.exit(1)
 
-            ui_step("git remote add origin", github_url)
+            ui_step("git remote add origin", _remote_parts(github_url)[0])
             run(["git", "remote", "add", "origin", github_url])
             remote = github_url
 
@@ -1242,24 +1271,18 @@ def deploy(github_url: str = ""):
     ui_clear()
     ui_banner()
     ui_header(cwd, branch, remote, AI_PROVIDER)
+    console.print()
     ui_tips()
+    _TIMINGS.clear()
 
     # ── Cek perubahan ─────────────────────────────────────────────────────────
     if not git_has_changes():
-        console.print(Panel(
-            f"[{C_DIM}]Semua file sudah up to date. Tidak ada yang perlu di-commit.[/]",
-            title=f"[bold {C_WARN}] NO CHANGES [/]",
-            title_align="left",
-            border_style=C_WARN,
-            box=SQUARE,
-            padding=(1, 2),
+        console.print(card(
+            Text("Semua file sudah up to date. Tidak ada yang perlu di-commit.", style=C_LABEL),
+            "No changes", tone="warn",
         ))
         console.print()
-        try:
-            console.print(f"  [{C_DIM}]Press Enter to exit...[/]", end="")
-            input()
-        except (KeyboardInterrupt, EOFError):
-            pass
+        ui_wait("Press Enter to exit...")
         sys.exit(0)
 
     # ── git add . ─────────────────────────────────────────────────────────────
@@ -1278,26 +1301,26 @@ def deploy(github_url: str = ""):
     # ── git commit ────────────────────────────────────────────────────────────
     result = spin_run(["git", "commit", "-m", commit_msg], "Creating commit")
     if result.returncode != 0:
-        ui_error(f"git commit gagal.\n{(result.stderr or '').strip()}")
+        ui_error("git commit gagal.", detail=(result.stderr or "").strip())
         sys.exit(1)
+    sha = (run(["git", "rev-parse", "--short", "HEAD"], capture=True).stdout or "").strip()
 
     # ── git push ──────────────────────────────────────────────────────────────
-    result = spin_run(["git", "push", "-u", "origin", branch], "Pushing to GitHub")
+    result = spin_run(["git", "push", "-u", "origin", branch], "Pushing to GitHub",
+                      detail=f"origin/{branch}")
     if result.returncode != 0:
         stderr_txt = (result.stderr or "").strip()
 
         # ── Cek apakah error karena autentikasi ───────────────────────────────
         if is_auth_error(stderr_txt):
             console.print()
-            console.print(Panel(
-                f"[{C_WARN}]Autentikasi GitHub gagal.[/]\n\n"
-                f"[{C_DIM}]Kemungkinan kamu sedang login dengan akun GitHub yang berbeda.\n"
-                f"Credential lama akan dihapus agar kamu bisa login ulang.[/]",
-                title=f"[bold {C_WARN}] AUTH ERROR [/]",
-                title_align="left",
-                border_style=C_WARN,
-                box=SQUARE,
-                padding=(1, 2),
+            console.print(card(
+                Text.from_markup(
+                    f"[bold {C_WARN}]Autentikasi GitHub gagal.[/]\n\n"
+                    f"[{C_LABEL}]Kemungkinan kamu sedang login dengan akun GitHub yang berbeda.\n"
+                    f"Credential lama akan dihapus agar kamu bisa login ulang.[/]"
+                ),
+                "Auth error", tone="warn",
             ))
             console.print()
 
@@ -1307,46 +1330,42 @@ def deploy(github_url: str = ""):
             if cleared:
                 console.print(f"  [{C_OK}]✓[/]  Credential dihapus")
             else:
-                console.print(f"  [{C_WARN}]![/]  Tidak ada credential yang dihapus (mungkin sudah kosong)")
+                console.print(f"  [{C_WARN}]▲[/]  Tidak ada credential yang dihapus (mungkin sudah kosong)")
 
             console.print()
-            console.print(Panel(
-                f"[{C_VAL}]Silakan login dengan akun GitHub yang benar.[/]\n\n"
-                f"[{C_DIM}]Git akan meminta username & password/token saat push berikutnya.\n"
-                f"Gunakan [/][{C_ACCENT}]Personal Access Token[/][{C_DIM}] sebagai password.\n"
-                f"Buat token di: [/][{C_ACCENT}]https://github.com/settings/tokens[/]",
-                title="[bold white] LOGIN ULANG [/]",
-                title_align="left",
-                border_style=C_LINE,
-                box=SQUARE,
-                padding=(1, 2),
+            console.print(card(
+                Text.from_markup(
+                    f"[bold {C_TEXT}]Silakan login dengan akun GitHub yang benar.[/]\n\n"
+                    f"[{C_LABEL}]Git akan meminta username & password/token saat push berikutnya.\n"
+                    f"Gunakan [/][{C_ACCENT}]Personal Access Token[/][{C_LABEL}] sebagai password.\n"
+                    f"Buat token di: [/][underline {C_ACCENT}]https://github.com/settings/tokens[/]"
+                ),
+                "Login ulang",
             ))
             console.print()
 
             # Retry push sekali — Git akan trigger login prompt
-            result = spin_run(["git", "push", "-u", "origin", branch], "Retrying push")
+            # (interactive: tanpa spinner supaya prompt login tidak tertimpa)
+            result = spin_run(["git", "push", "-u", "origin", branch], "Retrying push",
+                              detail=f"origin/{branch}", interactive=True)
             if result.returncode != 0:
                 ui_error(
-                    f"git push tetap gagal setelah login ulang.\n\n"
-                    f"[{C_DIM}]Pastikan:[/]\n"
-                    f"- Token memiliki scope [bold]repo[/bold]\n"
-                    f"- Kamu punya akses write ke repo ini\n\n"
-                    f"[{C_DIM}]{escape((result.stderr or '').strip())}[/]"
+                    "git push tetap gagal setelah login ulang.",
+                    hints=["Token memiliki scope repo", "Kamu punya akses write ke repo ini"],
+                    hint_label="Pastikan",
+                    detail=(result.stderr or "").strip(),
                 )
                 sys.exit(1)
         else:
             # Error bukan karena auth
             ui_error(
-                f"git push gagal.\n\n"
-                f"[{C_DIM}]Kemungkinan penyebab:[/]\n"
-                f"- Remote URL salah\n"
-                f"- Belum ada akses ke repo\n"
-                f"- Branch belum ada di remote\n\n"
-                f"[{C_DIM}]{escape(stderr_txt)}[/]"
+                "git push gagal.",
+                hints=["Remote URL salah", "Belum ada akses ke repo", "Branch belum ada di remote"],
+                detail=stderr_txt,
             )
             sys.exit(1)
 
-    ui_success(commit_msg, branch, remote)
+    ui_success(commit_msg, branch, remote, sha=sha, elapsed=sum(_TIMINGS))
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1362,9 +1381,7 @@ def main_cli():
         try:
             run_setup_wizard()
         except KeyboardInterrupt:
-            console.print()
-            console.print(Align.center(Text("Setup dibatalkan", style=C_DIM)))
-            console.print()
+            ui_cancel("Setup dibatalkan")
         sys.exit(0)
 
     # Flag --uninstall → hapus config dan uninstall package
@@ -1372,9 +1389,7 @@ def main_cli():
         try:
             run_uninstall()
         except KeyboardInterrupt:
-            console.print()
-            console.print(Align.center(Text("Uninstall dibatalkan", style=C_DIM)))
-            console.print()
+            ui_cancel("Uninstall dibatalkan")
         sys.exit(0)
 
     # Pertama kali — belum dikonfigurasi
@@ -1382,22 +1397,14 @@ def main_cli():
         try:
             run_setup_wizard()
         except KeyboardInterrupt:
-            console.print()
-            console.print(Align.center(Text("─" * 56, style=C_DIM)))
-            console.print(Align.center(Text("Setup dibatalkan", style=C_DIM)))
-            console.print(Align.center(Text("─" * 56, style=C_DIM)))
-            console.print()
+            ui_cancel("Setup dibatalkan")
             sys.exit(0)
 
     github_url = args[0] if args and not args[0].startswith("--") else ""
     try:
         deploy(github_url)
     except KeyboardInterrupt:
-        console.print()
-        console.print(Align.center(Text("─" * 56, style=C_DIM)))
-        console.print(Align.center(Text("Deploy dibatalkan", style=C_DIM)))
-        console.print(Align.center(Text("─" * 56, style=C_DIM)))
-        console.print()
+        ui_cancel("Deploy dibatalkan")
         sys.exit(0)
 
 

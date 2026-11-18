@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "autodeploy-ai"
-version = "1.7.9"
+version = "1.8.0"
 description = "Git Init · AI Commit · Auto Push — one command from any terminal"
 readme = "README.md"
 license = "MIT"
@@ -22,7 +22,6 @@ classifiers = [
 dependencies = [
     "rich>=13.0.0",
     "prompt_toolkit>=3.0.0",
-    "pyfiglet>=1.0.0",
 ]
 
 [[project.authors]]
