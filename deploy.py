@@ -56,7 +56,7 @@ from prompt_toolkit.formatted_text import HTML
 # ── Console ───────────────────────────────────────────────────────────────────
 console = Console(highlight=False)
 
-APP_VERSION = "1.8.1"
+APP_VERSION = "1.8.4"
 
 # ── Theme: teal → emerald → lime, amber untuk warning (no purple, no blue) ────
 C_ACCENT = "#2dd4bf"   # teal-400
@@ -1013,7 +1013,7 @@ def generate_commit_message(diff: str) -> str:
         console.print()
         console.print(card(
             commit_text(ai_msg), "Suggested commit",
-            subtitle="enter ↵ terima  ·  atau ketik pesan sendiri",
+            subtitle="",
             padding=(1, 2),
         ))
         console.print()
