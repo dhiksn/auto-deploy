@@ -56,7 +56,7 @@ from prompt_toolkit.formatted_text import HTML
 # ── Console ───────────────────────────────────────────────────────────────────
 console = Console(highlight=False)
 
-APP_VERSION = "1.8.0"
+APP_VERSION = "1.8.1"
 
 # ── Theme: teal → emerald → lime, amber untuk warning (no purple, no blue) ────
 C_ACCENT = "#2dd4bf"   # teal-400
@@ -518,9 +518,9 @@ def gradient_text(s: str, stops=BRAND_GRADIENT, bold: bool = True) -> Text:
     return out
 
 
-def badge(label: str, color: str) -> Text:
+def badge(label: str, color: str, width: int = 5) -> Text:
     """Chip kecil berwarna, mis.  FREE  /  feat ."""
-    t = Text(f" {label} ")
+    t = Text(f" {label.center(width)} ")
     t.stylize(f"bold {C_INK} on {color}")   # stylize (bukan base style) → padding sel tidak ikut berwarna
     return t
 
@@ -718,7 +718,7 @@ def ui_warn(message: str):
 
 def ui_cancel(message: str):
     console.print()
-    console.print(Text.assemble("  ", ("■", C_WARN), "  ", (message, C_DIM)))
+    console.print(Text.assemble("  ", ("●", C_WARN), "  ", (message, C_DIM)))
     console.print()
 
 
@@ -1369,12 +1369,264 @@ def deploy(github_url: str = ""):
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  HISTORY
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def run_history(n: int = 10):
+    """Tampilkan n commit terakhir dengan UI rapi."""
+    ui_clear()
+    ui_banner()
+
+    if not Path(".git").is_dir():
+        ui_error("Folder ini bukan git repo.", hints=["Jalankan autodeploy terlebih dahulu untuk init repo"])
+        sys.exit(1)
+
+    result = run(
+        ["git", "log", f"-{n}", "--pretty=format:%h|%ar|%s|%an"],
+        capture=True,
+    )
+    raw = (result.stdout or "").strip()
+
+    if not raw:
+        console.print(card(
+            Text("Belum ada commit di repo ini.", style=C_LABEL),
+            "History", tone="warn",
+        ))
+        console.print()
+        return
+
+    t = Table.grid(padding=(0, 2))
+    t.add_column(style=C_DIM,    no_wrap=True)   # sha
+    t.add_column(style=C_LABEL,  no_wrap=True)   # waktu
+    t.add_column(overflow="fold")                # pesan
+    t.add_column(style=C_DIM,    no_wrap=True)   # author
+
+    for line in raw.splitlines():
+        parts = line.split("|", 3)
+        if len(parts) < 4:
+            continue
+        sha, when, msg, author = parts
+        t.add_row(
+            sha,
+            when,
+            commit_text(msg),
+            author,
+        )
+
+    branch  = git_current_branch()
+    remote  = git_remote_url()
+    sub     = f"{branch}  ·  {_remote_parts(remote)[0]}" if remote else branch
+
+    console.print(card(t, f"Last {n} commits", subtitle=sub))
+    console.print()
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  SWITCH PROVIDER
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def run_switch_provider():
+    """Ganti AI provider tanpa setup ulang dari awal."""
+    ui_clear()
+    ui_banner()
+
+    # Baca config lama supaya key yang sudah ada tidak hilang
+    old_lines: list[str] = []
+    if ENV_PATH.exists():
+        old_lines = ENV_PATH.read_text(encoding="utf-8").splitlines()
+
+    def _get_old(key: str) -> str:
+        for l in old_lines:
+            if l.startswith(f"{key}="):
+                return l.split("=", 1)[1].strip()
+        return ""
+
+    current = os.environ.get("AI_PROVIDER", "")
+    console.print(card(
+        Text.from_markup(
+            f"[{C_LABEL}]Provider aktif sekarang: [/][bold {C_ACCENT}]{current or '(belum di-set)'}[/]"
+        ),
+        "Switch AI Provider",
+    ))
+    console.print()
+    console.print(card(_provider_table(), "Pilih provider baru"))
+    console.print()
+
+    while True:
+        choice = ask("Provider (1/2/3/4/5)")
+        if choice in {"1", "2", "3", "4", "5"}:
+            provider = PROVIDERS[int(choice) - 1][0]
+            break
+        ui_warn("Masukkan 1, 2, 3, 4, atau 5.")
+
+    # Pertahankan semua key lama, hanya timpa yang relevan
+    keep = {l.split("=", 1)[0]: l.split("=", 1)[1] for l in old_lines if "=" in l}
+    keep["AI_PROVIDER"] = provider
+
+    if provider == "openrouter":
+        old_key = _get_old("OPENROUTER_API_KEY")
+        console.print()
+        if old_key:
+            console.print(hint(f"[{C_LABEL}]API key sebelumnya: [/][{C_DIM}]{old_key[:8]}…[/]  [{C_LABEL}](tekan Enter untuk pakai)[/]"))
+            console.print()
+        while True:
+            key = ask("OpenRouter API Key", old_key or "sk-or-...")
+            key = key or old_key
+            if key.startswith("sk-or-") and len(key) > 20:
+                break
+            ui_warn("API key tidak valid. Harus diawali 'sk-or-'.")
+        keep["OPENROUTER_API_KEY"] = key
+        keep.setdefault("OPENROUTER_MODEL", "google/gemma-4-31b-it:free")
+
+    elif provider == "cloudflare":
+        old_id    = _get_old("CLOUDFLARE_ACCOUNT_ID")
+        old_token = _get_old("CLOUDFLARE_API_TOKEN")
+        console.print()
+        while True:
+            account_id = ask("Account ID", old_id or "01b402d8ebd6d105b6dd06a792a704b7")
+            account_id = account_id or old_id
+            if len(account_id) >= 32:
+                break
+            ui_warn("Account ID tidak valid.")
+        while True:
+            cf_token = ask("API Token", old_token or "cfut_...")
+            cf_token = cf_token or old_token
+            if len(cf_token) > 20:
+                break
+            ui_warn("API Token tidak valid.")
+        cf_model = ask("Model", _get_old("CLOUDFLARE_MODEL") or "@cf/meta/llama-4-scout-17b-16e-instruct")
+        keep["CLOUDFLARE_ACCOUNT_ID"] = account_id
+        keep["CLOUDFLARE_API_TOKEN"]  = cf_token
+        keep["CLOUDFLARE_MODEL"]      = cf_model or "@cf/meta/llama-4-scout-17b-16e-instruct"
+
+    elif provider == "groq":
+        old_key = _get_old("GROQ_API_KEY")
+        console.print()
+        if old_key:
+            console.print(hint(f"[{C_LABEL}]API key sebelumnya: [/][{C_DIM}]{old_key[:8]}…[/]  [{C_LABEL}](tekan Enter untuk pakai)[/]"))
+            console.print()
+        while True:
+            key = ask("Groq API Key", old_key or "gsk_...")
+            key = key or old_key
+            if key.startswith("gsk_") and len(key) > 20:
+                break
+            ui_warn("API key tidak valid. Harus diawali 'gsk_'.")
+        keep["GROQ_API_KEY"] = key
+        keep.setdefault("GROQ_MODEL", "llama-3.1-8b-instant")
+
+    elif provider == "openai":
+        old_key = _get_old("OPENAI_API_KEY")
+        console.print()
+        if old_key:
+            console.print(hint(f"[{C_LABEL}]API key sebelumnya: [/][{C_DIM}]{old_key[:8]}…[/]  [{C_LABEL}](tekan Enter untuk pakai)[/]"))
+            console.print()
+        while True:
+            key = ask("OpenAI API Key", old_key or "sk-...")
+            key = key or old_key
+            if key.startswith("sk-") and len(key) > 20:
+                break
+            ui_warn("API key tidak valid. Harus diawali 'sk-'.")
+        keep["OPENAI_API_KEY"] = key
+        keep.setdefault("OPENAI_MODEL", "gpt-4o-mini")
+
+    elif provider == "ollama":
+        old_url   = _get_old("OLLAMA_URL")
+        old_model = _get_old("OLLAMA_MODEL")
+        console.print()
+        ollama_url = ask("Ollama URL", old_url or "http://localhost:11434")
+        model      = ask("Model name", old_model or "llama3.2:latest")
+        keep["OLLAMA_URL"]   = ollama_url or old_url or "http://localhost:11434"
+        keep["OLLAMA_MODEL"] = model or old_model or "llama3.2:latest"
+
+    keep.setdefault("DEFAULT_BRANCH", "main")
+
+    # Tulis ulang config
+    ENV_PATH.write_text(
+        "\n".join(f"{k}={v}" for k, v in keep.items()) + "\n",
+        encoding="utf-8",
+    )
+    _parse_env_file(ENV_PATH)
+
+    console.print()
+    console.print(card(
+        Text.from_markup(
+            f"[bold {C_OK}]✓  Provider berhasil diganti![/]\n\n"
+            f"[{C_LABEL}]Aktif sekarang: [/][bold {C_ACCENT}]{provider}[/]"
+        ),
+        "Done", tone="ok",
+    ))
+    console.print()
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  HELP
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def run_help():
+    ui_clear()
+    ui_banner()
+
+    commands = [
+        ("autodeploy",                   "Deploy perubahan ke GitHub — staging, AI commit, push otomatis"),
+        ("autodeploy <url>",             "Deploy sekaligus set remote URL (untuk repo baru)"),
+        ("autodeploy --history",         "Tampilkan 10 commit terakhir"),
+        ("autodeploy --history <n>",     "Tampilkan n commit terakhir"),
+        ("autodeploy --switch-provider", "Ganti AI provider tanpa setup ulang"),
+        ("autodeploy --setup",           "Jalankan setup wizard dari awal"),
+        ("autodeploy --uninstall",       "Hapus konfigurasi dan uninstall package"),
+        ("autodeploy -h",                "Tampilkan halaman bantuan ini"),
+    ]
+
+    t = Table.grid(padding=(0, 3))
+    t.add_column(style=f"bold {C_ACCENT}", no_wrap=True)
+    t.add_column(style=C_LABEL, overflow="fold")
+
+    for cmd, desc in commands:
+        t.add_row(cmd, desc)
+
+    console.print(card(t, "Commands", padding=(1, 2)))
+
+    # Info provider aktif
+    provider = os.environ.get("AI_PROVIDER", "(belum di-set)")
+    model    = _ai_model_label()
+    console.print()
+    console.print(card(
+        kv([
+            ("Provider", Text(provider, style=f"bold {C_OK}")),
+            ("Model",    Text(model,    style=C_DIM)),
+            ("Config",   Text(str(ENV_PATH), style=C_DIM)),
+        ]),
+        "Active config",
+    ))
+    console.print()
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  ENTRYPOINT
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 def main_cli():
     """Entrypoint untuk global CLI command `autodeploy`."""
     args = sys.argv[1:]
+
+    if "-h" in args or "--help" in args:
+        run_help()
+        sys.exit(0)
+
+    if "--history" in args:
+        idx = args.index("--history")
+        n = 10
+        if idx + 1 < len(args) and args[idx + 1].isdigit():
+            n = int(args[idx + 1])
+        run_history(n)
+        sys.exit(0)
+
+    if "--switch-provider" in args:
+        try:
+            run_switch_provider()
+        except KeyboardInterrupt:
+            ui_cancel("Switch provider dibatalkan")
+        sys.exit(0)
 
     # Flag --setup → paksa jalankan wizard ulang
     if "--setup" in args:
